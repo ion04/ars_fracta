@@ -1,0 +1,27 @@
+# Build output
+build/
+out/
+cmake-build-*/
+CMakePresets.json
+CMakeUserPresets.json
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.ncb
+*.opendb
+*.sdf
+.idea/
+
+# Generated runtime files
+config.json
+*.frax
+fractal_original.png
+fractal_decoded.png
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store

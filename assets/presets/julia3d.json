@@ -1,0 +1,15 @@
+{
+    "type": "Julia3D",
+    "iterations": 48,
+    "bailout": 2.0,
+    "power": 8.0,
+    "juliaReal": -0.70176,
+    "juliaImag": 0.2742,
+    "juliaImag3D": 0.0,
+    "detail": 0.0025,
+    "colorScale": 12.0,
+    "hueShift": 0.0,
+    "colorMode": 0,
+    "m2dZoom": 1.0,
+    "autoRotate": false
+}

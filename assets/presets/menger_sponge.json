@@ -1,0 +1,15 @@
+{
+    "type": "MengerSponge",
+    "iterations": 4,
+    "bailout": 2.0,
+    "power": 2.0,
+    "juliaReal": -0.70176,
+    "juliaImag": 0.2742,
+    "juliaImag3D": 0.0,
+    "detail": 0.0015,
+    "colorScale": 8.0,
+    "hueShift": 0.3,
+    "colorMode": 0,
+    "m2dZoom": 1.0,
+    "autoRotate": true
+}
