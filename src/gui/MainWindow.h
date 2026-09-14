@@ -5,6 +5,8 @@
 
 #include "core/fractal/Fractal.h"
 
+#include <glm/glm.hpp>
+
 struct GLFWwindow;
 
 namespace ars::render {
@@ -30,6 +32,10 @@ public:
 
     const core::fractal::FractalParams& params() const { return params_; }
     void setParams(const core::fractal::FractalParams& params) { params_ = params; }
+
+    // вид по умолчанию для пейзажа (используется в main.cpp)
+    void setCameraView(const glm::vec3& eye, const glm::vec3& aim);
+    void setCameraFov(float fovDeg);
 
 private:
     void handleInput();

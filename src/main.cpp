@@ -1,5 +1,7 @@
 #include <GLFW/glfw3.h>
 
+#include <glm/glm.hpp>
+
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -43,6 +45,11 @@ int main(int argc, char** argv) {
     gui::MainWindow app(window);
     app.setParams(config.fractal);
     if (!app.init()) return 1;
+    // вид по умолчанию для пейзажа: камера над рельефом, смотрит на горизонт
+    if (config.fractal.type == core::fractal::FractalType::Terrain3D) {
+        app.setCameraView(glm::vec3(10.0f, 3.5f, -14.0f), glm::vec3(0.0f, 2.0f, 0.0f));
+        app.setCameraFov(55.0f);
+    }
 
     double last = glfwGetTime();
     while (!window.shouldClose()) {

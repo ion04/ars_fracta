@@ -125,15 +125,20 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
     // структуры всё равно не видны, поэтому гоняем меньше итераций
     // (для 2D-фрактала это не применяем — там строгая формула).
     int iters = params.iterations;
-    if (params.type == core::fractal::FractalType::MengerSponge) {
+    // Террейн не использует марш DE — шаги не нужны; ставим минимум.
+    const core::fractal::FractalType ft = params.type;
+    if (ft == core::fractal::FractalType::Terrain3D) {
+        iters = params.iterations;
+    } else if (ft == core::fractal::FractalType::MengerSponge) {
         // Menger сходится быстро: >12 итераций уже не меняют картинку,
         // но каждый лишний цикл тянет марш и нормали (до 5× DE на пиксель).
         iters = std::min(iters, 12);
     }
-    if (params.type != core::fractal::FractalType::Mandelbrot2D) {
+    if (ft != core::fractal::FractalType::Mandelbrot2D &&
+        ft != core::fractal::FractalType::Terrain3D) {
         // Для ветвистых Mandelbulb/Julia режем итерации мягче, чем для
         // Menger: слишком сильное сокращение «оголяет» тонкие структуры.
-        const float factor = (params.type == core::fractal::FractalType::MengerSponge)
+        const float factor = (ft == core::fractal::FractalType::MengerSponge)
             ? 0.40f + 0.60f * renderScale_   // Menger: агрессивно
             : 0.65f + 0.35f * renderScale_;  // Bulb/Julia: мягко
         iters = static_cast<int>(iters * factor);
@@ -149,17 +154,11 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
     shader_.setFloat("uHueShift", params.hueShift);
     shader_.setInt("uColorMode", params.colorMode);
     shader_.setFloat("uM2dZoom", params.m2dZoom);
-
-    // бюджет шагов ray marching зависит от типа и масштаба:
-// Menger — толстые детали, хватает мало шагов; Mandelbulb/Julia —
-// тонкие ветви, нужен запас шагов, иначе лучи проскакивают в щели
-// и картинка становится «рваной». На низком масштабе шагов нужно
-// меньше (деталь не видна), но для ветвистых держим более высокий минимум.
-    const bool isBox = (params.type == core::fractal::FractalType::MengerSponge);
-    const int maxSteps = isBox
-        ? static_cast<int>(60 + 100 * renderScale_)
-        : static_cast<int>(140 + 160 * renderScale_);
-    shader_.setInt("uMaxSteps", maxSteps);
+    shader_.setFloat("uTerrainAmplitude", params.terrainAmplitude);
+    shader_.setFloat("uTerrainFrequency", params.terrainFrequency);
+    shader_.setFloat("uCloudDensity", params.cloudDensity);
+    shader_.setFloat("uTreeDensity", params.treeDensity);
+    shader_.setFloat("uTimeOfDay", params.timeOfDay);
 
     glBindVertexArray(quadVAO_);
     glDrawArrays(GL_TRIANGLES, 0, 3);

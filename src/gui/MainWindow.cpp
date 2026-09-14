@@ -21,6 +21,14 @@ namespace ars::gui {
 
 MainWindow::MainWindow(render::Window& window) : window_(&window) {}
 
+void MainWindow::setCameraView(const glm::vec3& eye, const glm::vec3& aim) {
+    if (renderer_) renderer_->camera().setView(eye, aim);
+}
+
+void MainWindow::setCameraFov(float fovDeg) {
+    if (renderer_) renderer_->camera().setFov(fovDeg);
+}
+
 MainWindow::~MainWindow() {
     if (ImGui::GetCurrentContext()) {
         ImGui_ImplOpenGL3_Shutdown();

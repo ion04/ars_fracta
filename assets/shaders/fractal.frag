@@ -15,7 +15,7 @@ uniform vec3  uCamUp;
 uniform vec3  uCamForward;
 uniform float uFov;
 
-uniform int   uFractalType;   // 0=2D, 1=Mandelbulb, 2=Menger, 3=Julia
+uniform int   uFractalType;   // 0=2D, 1=Mandelbulb, 2=Menger, 3=Julia, 4=Terrain
 uniform int   uIterations;
 uniform float uBailout;
 uniform float uPower;
@@ -26,6 +26,13 @@ uniform float uHueShift;
 uniform int   uColorMode;
 uniform float uM2dZoom;
 uniform int   uMaxSteps;      // бюджет шагов ray marching (меньше при низком разрешении)
+
+// параметры пейзажа (uFractalType == 4)
+uniform float uTerrainAmplitude;  // высота рельефа
+uniform float uTerrainFrequency;  // масштаб шума
+uniform float uCloudDensity;      // плотность облаков
+uniform float uTreeDensity;       // плотность деревьев
+uniform float uTimeOfDay;         // 0..1: положение солнца над горизонтом
 
 // ---------------------------------------------------------------------------
 //  Distance estimators
@@ -189,6 +196,254 @@ vec3 shade(vec3 pos, vec3 n, float progress) {
 }
 
 // ---------------------------------------------------------------------------
+//  Процедурный пейзаж (uFractalType == 4): fBm-рельеф + фрактальные скалы,
+//  облака и лес. Рельеф задаётся аналитической высотой h(x,z), скалы —
+//  фрактальными гребнями (ridged noise), дерево — SDF-конусом.
+// ---------------------------------------------------------------------------
+
+float hash11(float n) {
+    return fract(sin(n * 127.1) * 43758.5453123);
+}
+
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+               mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x),
+               u.y);
+}
+
+float fbm2(vec2 p, int oct) {
+    float a = 0.5f;
+    float f = 1.0f;
+    float s = 0.0f;
+    for (int i = 0; i < oct; ++i) {
+        s += a * vnoise(p * f);
+        f *= 2.03f;
+        a *= 0.5f;
+    }
+    return s;
+}
+
+// фрактальные гребни: |noise| у окантовок -> острые хребты скал
+float ridge2(vec2 p, int oct) {
+    float a = 0.5f;
+    float f = 1.0f;
+    float s = 0.0f;
+    for (int i = 0; i < oct; ++i) {
+        float n = vnoise(p * f);
+        s += a * (1.0f - abs(2.0f * n - 1.0f));
+        f *= 2.07f;
+        a *= 0.5f;
+    }
+    return s;
+}
+
+float terrainH(vec2 xz) {
+    vec2 p = xz * uTerrainFrequency;
+
+    // крупная форма рельефа + гребни (скалы вплетены домен-варпингом)
+    vec2 warp = vec2(fbm2(p + vec2(13.7, 9.2), 3),
+                     fbm2(p + vec2(5.1, 21.3), 3)) - 0.5f;
+    vec2 wp = p + warp * 0.9f;
+
+    float base = fbm2(wp * 0.55f, 5);            // холмы и равнины
+    float ridge = ridge2(wp * 1.3f + 7.7f, 5);   // фрактальные хребты
+    // скалы доминируют там, где крупная форма поднята
+    float h = mix(base, ridge, smoothstep(0.62f, 0.85f, base));
+
+    float detail = fbm2(p * 4.8f + 3.1f, 3);
+    h += (detail - 0.5f) * 0.14f;                 // мелкие камни
+    return h * uTerrainAmplitude;                 // [0, amp]
+}
+
+float mapTerrain(vec3 p) {
+    return p.y - terrainH(p.xz);
+}
+
+//  пересечение луча с terrain: возвращает t (или -1 если промах)
+float marchTerrain(vec3 ro, vec3 rd, float maxDist) {
+    float t = 0.0f;
+    const float stepMin = 0.06f;
+    for (int i = 0; i < 72; ++i) {
+        vec3 p = ro + rd * t;
+        float d = mapTerrain(p);
+        if (d < 0.0f) return t;                 // нос под землёй
+        t += clamp(d, stepMin, 1.5f);
+        if (t > maxDist) break;
+    }
+    return -1.0f;
+}
+
+//  тень от солнца: короткий марш от точки к источнику света
+float terrainShadow(vec3 p, vec3 sunDir) {
+    float t = 0.12f;
+    float res = 1.0f;
+    for (int i = 0; i < 24; ++i) {
+        vec3 q = p + sunDir * t;
+        float d = mapTerrain(q);
+        if (d < 0.0f) return 0.0f;
+        res = min(res, 4.0f * d / t);
+        t += clamp(d, 0.05f, 0.8f);
+        if (t > 20.0f) break;
+    }
+    return res;
+}
+
+//  нормаль к террейну (метод конечных разностей по высоте)
+vec3 terrainNormal(vec2 xz) {
+    const float e = 0.03f;
+    float hL = terrainH(xz - vec2(e, 0.0f));
+    float hR = terrainH(xz + vec2(e, 0.0f));
+    float hD = terrainH(xz - vec2(0.0f, e));
+    float hU = terrainH(xz + vec2(0.0f, e));
+    return normalize(vec3(hL - hR, 2.0f * e, hD - hU));
+}
+
+//  солнечное направление из времени суток uTimeOfDay (0..1)
+vec3 sunDir() {
+    float ang = (uTimeOfDay - 0.25f) * 3.14159265f * 2.0f;
+    return normalize(vec3(0.5f, 0.35f + 0.5f * sin(ang), -0.55f));
+}
+
+//  цвет террейна по высоте/уклону: песок -> трава -> камень -> снег
+vec3 terrainColor(float h, float slope, float dist) {
+    // ночной оттенок по времени суток
+    float day = 0.35f + 0.65f * clamp(0.35f + 0.5f * sin((uTimeOfDay - 0.25f) * 6.2831853f), 0.0f, 1.0f);
+    float nt = smoothstep(0.12f, 0.30f, day);     // освещённость суток
+    vec3 grass = vec3(0.22f, 0.36f, 0.13f);
+    vec3 rock = vec3(0.30f, 0.27f, 0.24f);
+    vec3 snow = vec3(0.82f, 0.87f, 0.93f);
+    vec3 sand = vec3(0.62f, 0.55f, 0.36f);
+    float g = 1.0f - smoothstep(0.55f, 0.75f, 1.0f - slope); // внизу, полого => трава
+    vec3 col = mix(sand, grass, g);
+    col = mix(col, rock, smoothstep(0.35f, 0.55f, 1.0f - slope) * smoothstep(0.35f, 0.6f, h));
+    col = mix(col, snow, smoothstep(0.62f, 0.95f, h));
+    col *= mix(0.35f, 1.0f, nt);                   // night dimming
+    col *= mix(0.55f, 1.0f, 1.0f / (1.0f + dist * 0.06f)); // далёкий туман
+    return col;
+}
+
+//  дерево: SDF конуса (ствол+крона). p — локальная точка, offset y0 — база.
+float treeSDF(vec3 p, float baseY, float h) {
+    // буфер: позиции деревьев хешируются в ячейках сетки; здесь рисуем одну ель
+    float y = p.y - baseY;
+    if (y < 0.0f || y > h) return 1e9;
+    float r = 0.28f * (1.0f - y / h);             // крона: конус к вершине
+    float dSl = length(vec2(length(p.xz), y + 0.0f)) - r; // ~side
+    // простое приближение: расстояние до оси с радиусом по высоте
+    float dAxis = length(p.xz) - r;
+    return max(dAxis, -y);                        // палка (спрайт-замена стvora)
+}
+
+//  проверить деревья: объекты в сетке 1x1 вокруг xz; вернуть расстояние
+float treesDE(vec3 p) {
+    if (uTreeDensity <= 0.0f) return 1e9;
+    // деревья ставятся в ячейках сетки (hash -> смещение внутри)
+    float res = 1e9;
+    vec2 cell = floor(p.xz);
+    for (int i = -1; i <= 1; ++i) {
+        for (int j = -1; j <= 1; ++j) {
+            vec2 c = cell + vec2(float(i), float(j));
+            if (hash12(c) > uTreeDensity) continue;
+            // база дерева в ячейке, высота ели
+            vec2 base = c + 0.5f + (vec2(hash12(c + 71.3f), hash12(c + 43.1f)) - 0.5f) * 0.4f;
+            float hEl = 1.6f + 1.6f * hash12(c + 19.7f);
+            // ель не растёт на крутых склонах и в высоких горах
+            float ground = terrainH(base);
+            if (ground > uTerrainAmplitude * 0.45f) continue;
+            vec3 rel = vec3(p.x - base.x, p.y, p.z - base.y);
+            float y = rel.y - ground;
+            if (y < -0.1f) continue;
+            // радиус конуса по высоте
+            float r = 0.5f * (1.0f - y / hEl);
+            if (y <= hEl) {
+                res = min(res, length(vec2(length(rel.xz), y)) - r * 1.3f);
+            }
+            // ствол
+            res = min(res, length(rel.xz) - 0.07f);
+        }
+    }
+    return res;
+}
+
+//  облачный слой: быстрое пересечение луча с плоскостью облаков
+float cloudAlpha(vec3 ro, vec3 rd, float hitT) {
+    if (uCloudDensity <= 0.0f) return 0.0f;
+    float yLayer = uTerrainAmplitude * 1.25f + 2.0f;
+    if (rd.y <= 0.0f) return 0.0f;
+    float tC = (yLayer - ro.y) / rd.y;
+    if (tC < 0.0f || (hitT > 0.0f && tC > hitT)) return 0.0f; // под землёй/за горами
+    vec2 px = (ro + rd * tC).xz;
+    vec2 q = px * 0.06f + vec2(uTime * 0.01f, 0.0f);
+    float n = fbm2(q, 4);
+    float cover = smoothstep(0.42f, 0.78f, n);    // прореживание
+    float density = smoothstep(0.45f, 0.75f, n) * uCloudDensity;
+    // тень/подсветка облака
+    return clamp(cover * density * 0.9f, 0.0f, 0.95f);
+}
+
+vec3 renderTerrain(vec3 ro, vec3 rd) {
+    vec3 sun = sunDir();
+    float t = marchTerrain(ro, rd, 90.0f);
+
+    vec3 skyCol;
+    {
+        // градиент неба
+        float hUp = rd.y * 0.5f + 0.5f;
+        vec3 horizon = vec3(0.55f, 0.72f, 0.95f);
+        vec3 zenith = vec3(0.25f, 0.45f, 0.85f);
+        skyCol = mix(horizon, zenith, pow(hUp, 0.55f));
+        // солнечный диск и закатная подсветка
+        float sunHit = clamp(dot(rd, sun), 0.0f, 1.0f);
+        skyCol += vec3(1.0f, 0.88f, 0.6f) * pow(sunHit, 220.0f) * 2.2f;
+        skyCol += vec3(1.0f, 0.6f, 0.3f) * pow(sunHit, 8.0f) * 0.35f;
+    }
+
+    // небо (или далёкий горизонт), затем облака
+    vec3 col = skyCol;
+    float cloudA = cloudAlpha(ro, rd, t);
+    if (cloudA > 0.0f) col = mix(col, vec3(0.95f, 0.96f, 0.98f), cloudA);
+
+    if (t < 0.0f) {
+        return col;                     // чистое небо
+    }
+
+    vec3 hit = ro + rd * t;
+    vec3 n = terrainNormal(hit.xz);
+    // низкая точка => возможны деревья: проверяем SDF ели
+    float dTree = treesDE(hit + n * 0.02f);
+    if (dTree < 0.05f) {
+        // ель: тёмная хвоя, затенённая
+        float shade = clamp(dot(vec3(0.0f, 1.0f, 0.0f), sun), 0.0f, 1.0f);
+        return vec3(0.06f, 0.16f, 0.05f) * (0.4f + 0.6f * shade);
+    }
+    if (dTree < 0.6f) {
+        // стvол/край кроны
+        return mix(vec3(0.05f, 0.10f, 0.04f), vec3(0.16f, 0.13f, 0.08f),
+                   smoothstep(0.0f, 0.6f, dTree));
+    }
+
+    float diff = clamp(dot(n, sun), 0.0f, 1.0f);
+    float sh = terrainShadow(hit + n * 0.05f, sun);
+    float ambient = 0.16f + 0.12f * clamp(rd.y, -1.0f, 0.0f);
+    // мягкий свет от неба и отражение "склона"
+    float sky = 0.25f + 0.45f * clamp(n.y, 0.0f, 1.0f);
+    float slope = length(vec2(dFdx(hit.y), dFdy(hit.y)));
+    vec3 base = terrainColor(hit.y, slope, t);
+    vec3 light = base * (ambient + (diff + 0.35f * sky) * sh);
+    light = mix(light, col, clamp((t - 55.0f) * 0.045f, 0.0f, 0.8f)); // air perspective
+    return light;
+}
+
+// ---------------------------------------------------------------------------
 
 void main() {
     float tanHalf = tan(radians(uFov * 0.5));
@@ -200,6 +455,12 @@ void main() {
     // 2D-фрактал рисуется без ray marching
     if (uFractalType == 0) {
         FragColor = vec4(mandelbrot2D(), 1.0);
+        return;
+    }
+
+    // процедурный пейзаж
+    if (uFractalType == 4) {
+        FragColor = vec4(renderTerrain(uCamPos, dir), 1.0);
         return;
     }
 

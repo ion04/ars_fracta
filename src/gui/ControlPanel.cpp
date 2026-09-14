@@ -10,6 +10,8 @@
 
 #include <imgui.h>
 
+#include <glm/glm.hpp>
+
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
@@ -26,7 +28,7 @@ using core::fractal::Mandelbrot2D;
 using utils::Config;
 
 static const char* kTypeNames[] = {
-    "Mandelbrot 2D", "Mandelbulb 3D", "Menger Sponge", "Julia 3D"};
+    "Mandelbrot 2D", "Mandelbulb 3D", "Menger Sponge", "Julia 3D", "Пейзаж"};
 
 ControlPanel::ControlPanel(core::fractal::FractalParams& params,
                            render::Camera& camera, float* renderScale)
@@ -81,39 +83,53 @@ void ControlPanel::drawFractalSection() {
     FractalParams& p = *params_;
 
     ImGui::Text("Фрактал");
-    if (ImGui::Combo("Тип", &typeIndex_, kTypeNames, 4)) {
+    if (ImGui::Combo("Тип", &typeIndex_, kTypeNames, 5)) {
         const FractalType newType = static_cast<FractalType>(typeIndex_);
         if (newType != p.type) {
             // центр 2D-вида берётся из камеры; сбрасываем, чтобы после
             // орбиты в 3D Мандельброт не «уехал» за пределы экрана.
-            camera_->reset();
+            if (newType == FractalType::Terrain3D) {
+                camera_->setView(glm::vec3(0.0f, 2.0f, -14.0f),
+                                 glm::vec3(0.0f, 1.0f, 0.0f));
+                camera_->setFov(55.0f);
+            } else {
+                camera_->reset();
+            }
         }
         p.type = newType;
     }
 
-    ImGui::SliderInt("Итерации", &p.iterations, 16, 512);
-    ImGui::SliderFloat("Радиус сходимости", &p.bailout, 1.2f, 8.0f, "%.2f");
+    if (p.type == FractalType::Terrain3D) {
+        ImGui::SliderFloat("Высота рельефа", &p.terrainAmplitude, 1.0f, 20.0f, "%.1f");
+        ImGui::SliderFloat("Масштаб шума", &p.terrainFrequency, 0.03f, 0.5f, "%.2f");
+        ImGui::SliderFloat("Облачность", &p.cloudDensity, 0.0f, 1.5f, "%.2f");
+        ImGui::SliderFloat("Плотность леса", &p.treeDensity, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Время суток", &p.timeOfDay, 0.0f, 1.0f, "%.2f");
+    } else {
+        ImGui::SliderInt("Итерации", &p.iterations, 16, 512);
+        ImGui::SliderFloat("Радиус сходимости", &p.bailout, 1.2f, 8.0f, "%.2f");
 
-    if (p.type == FractalType::Mandelbulb3D || p.type == FractalType::Julia3D) {
-        ImGui::SliderFloat("Степень", &p.power, 2.0f, 32.0f, "%.1f");
-    }
-    if (p.type == FractalType::Julia3D) {
-        ImGui::SliderFloat("Re(c)", &p.juliaReal, -2.0f, 2.0f, "%.4f");
-        ImGui::SliderFloat("Im(c)", &p.juliaImag, -2.0f, 2.0f, "%.4f");
-        ImGui::SliderFloat("Im3(c)", &p.juliaImag3D, -2.0f, 2.0f, "%.4f");
-    }
-    if (p.type == FractalType::Mandelbrot2D) {
-        ImGui::SliderFloat("Масштаб", &p.m2dZoom, 0.01f, 30.0f, "%.2f");
-    }
+        if (p.type == FractalType::Mandelbulb3D || p.type == FractalType::Julia3D) {
+            ImGui::SliderFloat("Степень", &p.power, 2.0f, 32.0f, "%.1f");
+        }
+        if (p.type == FractalType::Julia3D) {
+            ImGui::SliderFloat("Re(c)", &p.juliaReal, -2.0f, 2.0f, "%.4f");
+            ImGui::SliderFloat("Im(c)", &p.juliaImag, -2.0f, 2.0f, "%.4f");
+            ImGui::SliderFloat("Im3(c)", &p.juliaImag3D, -2.0f, 2.0f, "%.4f");
+        }
+        if (p.type == FractalType::Mandelbrot2D) {
+            ImGui::SliderFloat("Масштаб", &p.m2dZoom, 0.01f, 30.0f, "%.2f");
+        }
 
-    ImGui::SliderFloat("Детализация", &p.detail, 0.0005f, 0.02f, "%.4f");
-    ImGui::SliderFloat("Масштаб цвета", &p.colorScale, 0.5f, 40.0f, "%.1f");
-    ImGui::SliderFloat("Сдвиг цвета", &p.hueShift, -3.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Детализация", &p.detail, 0.0005f, 0.02f, "%.4f");
+        ImGui::SliderFloat("Масштаб цвета", &p.colorScale, 0.5f, 40.0f, "%.1f");
+        ImGui::SliderFloat("Сдвиг цвета", &p.hueShift, -3.0f, 3.0f, "%.2f");
 
-    if (ImGui::Combo("Палитра", &colorModeIdx_, "Градиент\0Оттенки\0")) {
-        p.colorMode = colorModeIdx_;
+        if (ImGui::Combo("Палитра", &colorModeIdx_, "Градиент\0Оттенки\0")) {
+            p.colorMode = colorModeIdx_;
+        }
+        ImGui::Checkbox("Автовращение", &p.autoRotate);
     }
-    ImGui::Checkbox("Автовращение", &p.autoRotate);
 
     ImGui::Spacing();
     if (renderScale_) {

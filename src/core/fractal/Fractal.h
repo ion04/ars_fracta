@@ -12,6 +12,7 @@ enum class FractalType : int {
     Mandelbulb3D = 1,
     MengerSponge = 2,
     Julia3D      = 3,
+    Terrain3D    = 4,  // процедурный пейзаж: fBm-рельеф + фрактальные скалы
 };
 
 inline const char* toString(FractalType t) {
@@ -20,6 +21,7 @@ inline const char* toString(FractalType t) {
         case FractalType::Mandelbulb3D: return "Mandelbulb3D";
         case FractalType::MengerSponge: return "MengerSponge";
         case FractalType::Julia3D:      return "Julia3D";
+        case FractalType::Terrain3D:    return "Terrain3D";
     }
     return "Unknown";
 }
@@ -43,6 +45,11 @@ struct FractalParams {
     float hueShift    = 0.0f;
     int   colorMode   = 0;
     float m2dZoom     = 1.0f;
+    float terrainAmplitude = 6.0f;  // высота рельефа (Terrain3D)
+    float terrainFrequency = 0.12f; // масштаб шума (Terrain3D)
+    float cloudDensity      = 0.6f; // плотность облаков (Terrain3D)
+    float treeDensity       = 0.5f; // плотность деревьев (Terrain3D)
+    float timeOfDay         = 0.35f; // положение солнца (0..1, Terrain3D)
     bool  autoRotate  = false;
 
     bool operator==(const FractalParams& o) const {
@@ -50,7 +57,11 @@ struct FractalParams {
                power == o.power && juliaReal == o.juliaReal && juliaImag == o.juliaImag &&
                juliaImag3D == o.juliaImag3D && detail == o.detail &&
                colorScale == o.colorScale && hueShift == o.hueShift &&
-               colorMode == o.colorMode && m2dZoom == o.m2dZoom;
+               colorMode == o.colorMode && m2dZoom == o.m2dZoom &&
+               terrainAmplitude == o.terrainAmplitude &&
+               terrainFrequency == o.terrainFrequency &&
+               cloudDensity == o.cloudDensity && treeDensity == o.treeDensity &&
+               timeOfDay == o.timeOfDay;
     }
     bool operator!=(const FractalParams& o) const { return !(*this == o); }
 };

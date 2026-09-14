@@ -30,6 +30,10 @@ public:
 
     void reset();
 
+    /// Точная установка камеры (eye/target) — используется для просмотра пейзажей.
+    void setView(const glm::vec3& eye, const glm::vec3& aim);
+    void setFov(float fovDeg);
+
     glm::mat4 viewMatrix() const;
     glm::mat4 projectionMatrix(float aspect) const;
 

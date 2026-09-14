@@ -21,6 +21,7 @@ std::string typeToString(core::fractal::FractalType t) {
         case core::fractal::FractalType::Mandelbulb3D: return "Mandelbulb3D";
         case core::fractal::FractalType::MengerSponge: return "MengerSponge";
         case core::fractal::FractalType::Julia3D:      return "Julia3D";
+        case core::fractal::FractalType::Terrain3D:    return "Terrain3D";
     }
     return "Mandelbulb3D";
 }
@@ -30,6 +31,7 @@ core::fractal::FractalType typeFromString(const std::string& s) {
     if (s == "Mandelbulb3D") return core::fractal::FractalType::Mandelbulb3D;
     if (s == "MengerSponge") return core::fractal::FractalType::MengerSponge;
     if (s == "Julia3D")      return core::fractal::FractalType::Julia3D;
+    if (s == "Terrain3D")    return core::fractal::FractalType::Terrain3D;
     return core::fractal::FractalType::Mandelbulb3D;
 }
 
@@ -47,6 +49,11 @@ json fractalToJson(const core::fractal::FractalParams& p) {
     j["hueShift"] = p.hueShift;
     j["colorMode"] = p.colorMode;
     j["m2dZoom"] = p.m2dZoom;
+    j["terrainAmplitude"] = p.terrainAmplitude;
+    j["terrainFrequency"] = p.terrainFrequency;
+    j["cloudDensity"] = p.cloudDensity;
+    j["treeDensity"] = p.treeDensity;
+    j["timeOfDay"] = p.timeOfDay;
     j["autoRotate"] = p.autoRotate;
     return j;
 }
@@ -65,6 +72,11 @@ core::fractal::FractalParams fractalFromJson(const json& j) {
     if (j.contains("hueShift"))    p.hueShift = j["hueShift"].get<float>();
     if (j.contains("colorMode"))   p.colorMode = j["colorMode"].get<int>();
     if (j.contains("m2dZoom"))     p.m2dZoom = j["m2dZoom"].get<float>();
+    if (j.contains("terrainAmplitude")) p.terrainAmplitude = j["terrainAmplitude"].get<float>();
+    if (j.contains("terrainFrequency")) p.terrainFrequency = j["terrainFrequency"].get<float>();
+    if (j.contains("cloudDensity"))     p.cloudDensity = j["cloudDensity"].get<float>();
+    if (j.contains("treeDensity"))      p.treeDensity = j["treeDensity"].get<float>();
+    if (j.contains("timeOfDay"))        p.timeOfDay = j["timeOfDay"].get<float>();
     if (j.contains("autoRotate"))  p.autoRotate = j["autoRotate"].get<bool>();
     return p;
 }

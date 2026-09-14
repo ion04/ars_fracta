@@ -86,6 +86,19 @@ void Camera::reset() {
     updateVectors();
 }
 
+void Camera::setView(const glm::vec3& eye, const glm::vec3& aim) {
+    position_ = eye;
+    target_ = aim;
+    ++revision_;
+    updateVectors();
+}
+
+void Camera::setFov(float fovDeg) {
+    fovDeg_ = fovDeg;
+    ++revision_;
+    updateVectors();
+}
+
 glm::mat4 Camera::viewMatrix() const {
     return glm::lookAt(position_, target_, glm::vec3(0.0f, 1.0f, 0.0f));
 }
