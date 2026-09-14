@@ -22,6 +22,7 @@ std::string typeToString(core::fractal::FractalType t) {
         case core::fractal::FractalType::MengerSponge: return "MengerSponge";
         case core::fractal::FractalType::Julia3D:      return "Julia3D";
         case core::fractal::FractalType::Terrain3D:    return "Terrain3D";
+        case core::fractal::FractalType::Coast3D:      return "Coast3D";
     }
     return "Mandelbulb3D";
 }
@@ -32,6 +33,7 @@ core::fractal::FractalType typeFromString(const std::string& s) {
     if (s == "MengerSponge") return core::fractal::FractalType::MengerSponge;
     if (s == "Julia3D")      return core::fractal::FractalType::Julia3D;
     if (s == "Terrain3D")    return core::fractal::FractalType::Terrain3D;
+    if (s == "Coast3D")      return core::fractal::FractalType::Coast3D;
     return core::fractal::FractalType::Mandelbulb3D;
 }
 
@@ -55,6 +57,8 @@ json fractalToJson(const core::fractal::FractalParams& p) {
     j["treeDensity"] = p.treeDensity;
     j["timeOfDay"] = p.timeOfDay;
     j["autoRotate"] = p.autoRotate;
+    j["coastCenterRe"] = p.coastCenterRe;
+    j["coastCenterIm"] = p.coastCenterIm;
     return j;
 }
 
@@ -78,6 +82,8 @@ core::fractal::FractalParams fractalFromJson(const json& j) {
     if (j.contains("treeDensity"))      p.treeDensity = j["treeDensity"].get<float>();
     if (j.contains("timeOfDay"))        p.timeOfDay = j["timeOfDay"].get<float>();
     if (j.contains("autoRotate"))  p.autoRotate = j["autoRotate"].get<bool>();
+    if (j.contains("coastCenterRe")) p.coastCenterRe = j["coastCenterRe"].get<float>();
+    if (j.contains("coastCenterIm")) p.coastCenterIm = j["coastCenterIm"].get<float>();
     return p;
 }
 

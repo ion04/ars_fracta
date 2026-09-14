@@ -52,6 +52,13 @@ int main(int argc, char** argv) {
         const glm::vec3 eye(10.0f, eyeY, -14.0f);
         app.setCameraView(eye, eye + glm::vec3(-10.0f, -2.0f, 14.0f));
         app.setCameraFov(55.0f);
+    } else if (config.fractal.type == core::fractal::FractalType::Coast3D) {
+        // вид «Морское побережье»: камера над водой, остров — в центре кадра
+        const float scale = 0.15f / std::max(config.fractal.m2dZoom, 0.01f);
+        const glm::vec3 target(config.fractal.coastCenterRe / scale * 0.6f, 0.8f,
+                               config.fractal.coastCenterIm / scale * 0.6f);
+        app.setCameraView(target + glm::vec3(0.0f, 9.0f, -18.0f), target);
+        app.setCameraFov(55.0f);
     }
 
     double last = glfwGetTime();

@@ -28,7 +28,8 @@ using core::fractal::Mandelbrot2D;
 using utils::Config;
 
 static const char* kTypeNames[] = {
-    "Mandelbrot 2D", "Mandelbulb 3D", "Menger Sponge", "Julia 3D", "Пейзаж"};
+    "Mandelbrot 2D", "Mandelbulb 3D", "Menger Sponge", "Julia 3D",
+    "Пейзаж", "Морское побережье"};
 
 // Камера над ландшафтом: высота зависит от амплитуды рельефа, чтобы камера
 // никогда не оказывалась под горами (иначе экран «чернеет» — марш снаружи
@@ -38,6 +39,17 @@ static void placeTerrainCamera(render::Camera& cam,
     const float eyeY = std::max(3.5f, p.terrainAmplitude * 1.1f);
     const glm::vec3 eye(10.0f, eyeY, -14.0f);
     cam.setView(eye, eye + glm::vec3(-10.0f, -2.0f, 14.0f));
+    cam.setFov(55.0f);
+}
+
+// Камера над морем: побережье видно под наклоном, горизонт — вода.
+static void placeCoastCamera(render::Camera& cam,
+                             const core::fractal::FractalParams& p) {
+    // комплексная плоскость: world = (c - uCoastCenter) * 0.15 / max(m2dZoom, 0.01)
+    const float scale = 0.15f / std::max(p.m2dZoom, 0.01f);
+    const glm::vec3 target(p.coastCenterRe / scale * 0.6f, 0.8f,
+                           p.coastCenterIm / scale * 0.6f);
+    cam.setView(target + glm::vec3(0.0f, 9.0f, -18.0f), target);
     cam.setFov(55.0f);
 }
 
@@ -94,13 +106,15 @@ void ControlPanel::drawFractalSection() {
     FractalParams& p = *params_;
 
     ImGui::Text("Фрактал");
-    if (ImGui::Combo("Тип", &typeIndex_, kTypeNames, 5)) {
+    if (ImGui::Combo("Тип", &typeIndex_, kTypeNames, 6)) {
         const FractalType newType = static_cast<FractalType>(typeIndex_);
         if (newType != p.type) {
             // центр 2D-вида берётся из камеры; сбрасываем, чтобы после
             // орбиты в 3D Мандельброт не «уехал» за пределы экрана.
             if (newType == FractalType::Terrain3D) {
                 placeTerrainCamera(*camera_, p);
+            } else if (newType == FractalType::Coast3D) {
+                placeCoastCamera(*camera_, p);
             } else {
                 camera_->reset();
             }
@@ -119,6 +133,15 @@ void ControlPanel::drawFractalSection() {
         ImGui::SliderFloat("Масштаб шума", &p.terrainFrequency, 0.03f, 0.5f, "%.2f");
         ImGui::SliderFloat("Облачность", &p.cloudDensity, 0.0f, 1.5f, "%.2f");
         ImGui::SliderFloat("Плотность леса", &p.treeDensity, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Время суток", &p.timeOfDay, 0.0f, 1.0f, "%.2f");
+    } else if (p.type == FractalType::Coast3D) {
+        ImGui::SliderInt("Итерации берега", &p.iterations, 16, 512);
+        // берег = граница Мандельброта: центр выбирается в параметре ниже
+        ImGui::SliderFloat("Re центра", &p.coastCenterRe, -2.0f, 1.0f, "%.5f");
+        ImGui::SliderFloat("Im центра", &p.coastCenterIm, -1.2f, 1.2f, "%.5f");
+        ImGui::SliderFloat("Масштаб берега", &p.m2dZoom, 0.05f, 40.0f, "%.1f");
+        ImGui::SliderFloat("Высота суши", &p.terrainAmplitude, 1.0f, 20.0f, "%.1f");
+        ImGui::SliderFloat("Облачность", &p.cloudDensity, 0.0f, 1.5f, "%.2f");
         ImGui::SliderFloat("Время суток", &p.timeOfDay, 0.0f, 1.0f, "%.2f");
     } else {
         ImGui::SliderInt("Итерации", &p.iterations, 16, 512);
@@ -168,6 +191,8 @@ void ControlPanel::drawFractalSection() {
                         colorModeIdx_ = p.colorMode;
                         if (p.type == FractalType::Terrain3D) {
                             placeTerrainCamera(*camera_, p);
+                        } else if (p.type == FractalType::Coast3D) {
+                            placeCoastCamera(*camera_, p);
                         }
                     }
                 }

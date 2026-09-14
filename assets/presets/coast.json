@@ -1,0 +1,22 @@
+{
+    "type": "Coast3D",
+    "iterations": 96,
+    "bailout": 2.0,
+    "power": 8.0,
+    "juliaReal": -0.70176,
+    "juliaImag": 0.2742,
+    "juliaImag3D": 0.0,
+    "detail": 0.0025,
+    "colorScale": 12.0,
+    "hueShift": 0.0,
+    "colorMode": 0,
+    "m2dZoom": 1.0,
+    "terrainAmplitude": 6.0,
+    "terrainFrequency": 0.12,
+    "cloudDensity": 0.6,
+    "treeDensity": 0.0,
+    "timeOfDay": 0.35,
+    "autoRotate": false,
+    "coastCenterRe": -0.74536,
+    "coastCenterIm": 0.11301
+}

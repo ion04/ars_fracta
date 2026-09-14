@@ -15,7 +15,7 @@ uniform vec3  uCamUp;
 uniform vec3  uCamForward;
 uniform float uFov;
 
-uniform int   uFractalType;   // 0=2D, 1=Mandelbulb, 2=Menger, 3=Julia, 4=Terrain
+uniform int   uFractalType;   // 0=2D, 1=Mandelbulb, 2=Menger, 3=Julia, 4=Terrain, 5=Coast
 uniform int   uIterations;
 uniform float uBailout;
 uniform float uPower;
@@ -28,11 +28,15 @@ uniform float uM2dZoom;
 uniform int   uMaxSteps;      // бюджет шагов ray marching (меньше при низком разрешении)
 
 // параметры пейзажа (uFractalType == 4)
-uniform float uTerrainAmplitude;  // высота рельефа
+uniform float uTerrainAmplitude;  // высота рельефа / суши
 uniform float uTerrainFrequency;  // масштаб шума
 uniform float uCloudDensity;      // плотность облаков
 uniform float uTreeDensity;       // плотность деревьев
 uniform float uTimeOfDay;         // 0..1: положение солнца над горизонтом
+
+// параметры побережья (uFractalType == 5): центр плоскости Мандельброта,
+// где проходит линия берега
+uniform vec2  uCoastCenter;
 
 // ---------------------------------------------------------------------------
 //  Distance estimators
@@ -457,6 +461,170 @@ vec3 renderTerrain(vec3 ro, vec3 rd) {
 }
 
 // ---------------------------------------------------------------------------
+//  Морское побережье (uFractalType == 5): линия берега повторяет границу
+//  множества Мандельброта. Суша — внутренность множества, море — внешность,
+//  «пляж» — узкая полоса внешнего расстояния D около границы.
+// ---------------------------------------------------------------------------
+
+//  отображение мировых координат в комплексную плоскость: world (0,0) -> центр
+vec2 coastC(vec2 xz) {
+    float scale = 0.15f / max(uM2dZoom, 0.01f);
+    return uCoastCenter + xz * scale;
+}
+
+//  быстрые тесты внутренности множества (главная кардиоида и период-2 бульба)
+//  — покрывают почти всю «сушу» без дорогого итерационного цикла
+bool coastInteriorFast(vec2 c) {
+    float x = c.x - 0.25f;
+    float q = x * x + c.y * c.y;
+    bool cardioid = q * (q + x) < c.y * c.y * 0.25f;
+    vec2 b = c + vec2(1.0f, 0.0f);
+    bool bulb = b.x * b.x + b.y * b.y < 0.0625f;
+    return cardioid || bulb;
+}
+
+//  x = доля суши (0..1), y = внешнее расстояние до границы в мировых единицах
+vec2 coastField(vec2 xz) {
+    vec2 c = coastC(xz);
+    if (coastInteriorFast(c)) return vec2(1.0f, 0.0f);
+
+    vec2 z = vec2(0.0f);
+    vec2 dz = vec2(0.0f);
+    int it = uIterations;
+    float bail = max(uBailout, 2.0f);
+    bool escaped = false;
+    for (int i = 0; i < uIterations; ++i) {
+        dz = 2.0f * vec2(z.x * dz.x - z.y * dz.y, z.x * dz.y + z.y * dz.x) +
+             vec2(1.0f, 0.0f);
+        z = vec2(z.x * z.x - z.y * z.y, 2.0f * z.x * z.y) + c;
+        if (dot(z, z) > bail * bail) { it = i; escaped = true; break; }
+    }
+    if (!escaped) return vec2(1.0f, 0.0f);
+
+    float mz = sqrt(dot(z, z));
+    float mdz = max(sqrt(dot(dz, dz)), 1e-6f);
+    float dCom = mz * log(mz) / mdz;                 // exterior distance (complex)
+    float dW = dCom * max(uM2dZoom, 0.01f) / 0.15f;  // те же единицы, что xz
+
+    //  плавный счётчик итераций: на границе si -> uIterations, в открытом море — мал
+    float si = float(it) + 1.0f - log2(log2(mz) / log2(uBailout));
+    float land = smoothstep(float(uIterations - 4), float(uIterations), si);
+    return vec2(land, dW);
+}
+
+//  высота суши: холмы внутри множества, спадающие к берегу
+float coastHeight(vec2 xz) {
+    float land = coastField(xz).x;
+    float hills = 0.30f + 0.70f * fbm2(xz * 0.13f + 17.3f, 3);
+    return land * uTerrainAmplitude * hills;
+}
+
+//  волны на воде (мелкая модуляция поверхности, не пересекается с сушей)
+float waveHeight(vec2 xz) {
+    vec2 q = xz * 0.20f + vec2(uTime * 0.05f, 0.0f);
+    float a = (fbm2(q, 2) - 0.5f) * 0.30f;
+    vec2 s = xz * 0.8f + vec2(0.0f, uTime * 0.07f);
+    a += 0.4f * (sin(s.x) + cos(s.y)) * 0.12f;
+    return a;
+}
+
+//  высота видимой поверхности в точке xz (суша или уровень волн)
+float coastSurface(vec2 xz) {
+    float h = coastHeight(xz);
+    if (h < 0.3f) h += waveHeight(xz);
+    return h;
+}
+
+float mapCoast(vec3 p) {
+    return min(p.y - coastHeight(p.xz), p.y);   // суша сверху, вода на y=0
+}
+
+float marchCoast(vec3 ro, vec3 rd, float maxDist) {
+    float t = 0.0f;
+    const float stepMin = 0.10f;
+    int steps = max(uMaxSteps, 30);
+    for (int i = 0; i < steps; ++i) {
+        vec3 p = ro + rd * t;
+        float d = mapCoast(p);
+        if (d < 0.0f) return t;
+        t += clamp(d, stepMin, 2.5f);
+        if (t > maxDist) break;
+    }
+    return -1.0f;
+}
+
+vec3 coastSurfNormal(vec2 xz) {
+    const float e = 0.06f;
+    float hL = coastSurface(xz - vec2(e, 0.0f));
+    float hR = coastSurface(xz + vec2(e, 0.0f));
+    float hD = coastSurface(xz - vec2(0.0f, e));
+    float hU = coastSurface(xz + vec2(0.0f, e));
+    return normalize(vec3(hL - hR, 2.0f * e, hD - hU));
+}
+
+vec3 renderCoast(vec3 ro, vec3 rd) {
+    vec3 sun = sunDir();
+    float nt = daylightLevel();
+    float t = marchCoast(ro, rd, 110.0f);
+
+    // небо (морской горизонт) — ночью гаснет, как и в пейзаже
+    vec3 skyCol;
+    {
+        float hUp = rd.y * 0.5f + 0.5f;
+        vec3 horizon = vec3(0.49f, 0.68f, 0.85f);
+        vec3 zenith = vec3(0.22f, 0.44f, 0.80f);
+        skyCol = mix(horizon, zenith, pow(hUp, 0.55f));
+        skyCol *= mix(0.12f, 1.0f, nt);
+        float sunHit = clamp(dot(rd, sun), 0.0f, 1.0f);
+        skyCol += vec3(1.0f, 0.88f, 0.6f) * pow(sunHit, 220.0f) * 2.2f * nt;
+        skyCol += vec3(1.0f, 0.6f, 0.3f) * pow(sunHit, 8.0f) * 0.35f * nt;
+    }
+
+    vec3 col = skyCol;
+    float cloudA = cloudAlpha(ro, rd, t);
+    if (cloudA > 0.0f) {
+        col = mix(col, vec3(0.95f, 0.96f, 0.98f) * (0.25f + 0.75f * nt), cloudA);
+    }
+    if (t < 0.0f) return col;          // чистое небо
+
+    vec3 hit = ro + rd * t;
+    vec3 n = coastSurfNormal(hit.xz);
+    vec2 cf = coastField(hit.xz);
+    float land = cf.x;
+
+    if (land > 0.5f) {
+        // --- суша: песчаный пляж у воды -> зелень -> скалы на вершинах
+        float diff = clamp(dot(n, sun), 0.0f, 1.0f);
+        float sky = 0.28f + 0.42f * clamp(n.y, 0.0f, 1.0f);
+        float slope = length(vec2(dFdx(hit.y), dFdy(hit.y)));
+        float hn = hit.y / max(uTerrainAmplitude, 0.01f);
+        vec3 sand = vec3(0.76f, 0.68f, 0.45f);
+        vec3 green = vec3(0.21f, 0.35f, 0.12f);
+        vec3 rock = vec3(0.30f, 0.27f, 0.24f);
+        vec3 base = mix(sand, green, smoothstep(0.0f, 0.35f, hn) * (1.0f - slope));
+        base = mix(base, rock, smoothstep(0.62f, 0.85f, hn));
+        base *= mix(0.40f, 1.0f, nt);
+        col = base * (0.16f + 0.90f * (0.45f * diff + 0.55f * sky));
+        col = mix(col, skyCol, clamp((t - 70.0f) * 0.05f, 0.0f, 0.7f)); // морская дымка
+    } else {
+        // --- вода: глубокое море -> бирюзовое мелководье у берега
+        float dw = cf.y;
+        float shore = exp(-max(dw, 0.0f) * 5.0f);
+        vec3 deep = vec3(0.02f, 0.10f, 0.18f);
+        vec3 shallow = vec3(0.10f, 0.46f, 0.42f);
+        vec3 w = mix(deep, shallow, shore);
+        w *= (0.45f + 0.5f * nt);
+        // блик солнца на волнах + френель-отражение неба
+        float v = clamp(dot(n, -rd), 0.0f, 1.0f);
+        float fres = pow(1.0f - v, 3.0f);
+        float spec = pow(clamp(dot(reflect(-sun, n), -rd), 0.0f, 1.0f), 90.0f);
+        col = mix(w, skyCol, fres * 0.85f);
+        col += vec3(1.0f, 0.95f, 0.8f) * spec * 0.8f * nt;
+    }
+    return col;
+}
+
+// ---------------------------------------------------------------------------
 
 void main() {
     float tanHalf = tan(radians(uFov * 0.5));
@@ -474,6 +642,12 @@ void main() {
     // процедурный пейзаж
     if (uFractalType == 4) {
         FragColor = vec4(renderTerrain(uCamPos, dir), 1.0);
+        return;
+    }
+
+    // морское побережье (граница множества Мандельброта)
+    if (uFractalType == 5) {
+        FragColor = vec4(renderCoast(uCamPos, dir), 1.0);
         return;
     }
 

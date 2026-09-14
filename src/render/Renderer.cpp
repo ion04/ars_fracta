@@ -125,7 +125,8 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
     // структуры всё равно не видны, поэтому гоняем меньше итераций
     // (для 2D-фрактала это не применяем — там строгая формула).
     int iters = params.iterations;
-    // Террейн не использует марш DE — шаги не нужны; ставим минимум.
+    // Террейн/побережье не использует марш DE — итерации не нужны шагам,
+    // но для побережья итерации задают точность границы Мандельброта.
     const core::fractal::FractalType ft = params.type;
     if (ft == core::fractal::FractalType::Terrain3D) {
         iters = params.iterations;
@@ -135,7 +136,8 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
         iters = std::min(iters, 12);
     }
     if (ft != core::fractal::FractalType::Mandelbrot2D &&
-        ft != core::fractal::FractalType::Terrain3D) {
+        ft != core::fractal::FractalType::Terrain3D &&
+        ft != core::fractal::FractalType::Coast3D) {
         // Для ветвистых Mandelbulb/Julia режем итерации мягче, чем для
         // Menger: слишком сильное сокращение «оголяет» тонкие структуры.
         const float factor = (ft == core::fractal::FractalType::MengerSponge)
@@ -162,6 +164,9 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
         case core::fractal::FractalType::Terrain3D:
             maxSteps = static_cast<int>(28 + 30 * renderScale_);
             break;
+        case core::fractal::FractalType::Coast3D:
+            maxSteps = static_cast<int>(30 + 40 * renderScale_);
+            break;
         default:
             maxSteps = static_cast<int>(100 + 100 * renderScale_);
             break;
@@ -181,6 +186,8 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
     shader_.setFloat("uCloudDensity", params.cloudDensity);
     shader_.setFloat("uTreeDensity", params.treeDensity);
     shader_.setFloat("uTimeOfDay", params.timeOfDay);
+    shader_.setVec2("uCoastCenter",
+                    glm::vec2(params.coastCenterRe, params.coastCenterIm));
 
     glBindVertexArray(quadVAO_);
     glDrawArrays(GL_TRIANGLES, 0, 3);

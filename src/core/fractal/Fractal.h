@@ -13,6 +13,7 @@ enum class FractalType : int {
     MengerSponge = 2,
     Julia3D      = 3,
     Terrain3D    = 4,  // процедурный пейзаж: fBm-рельеф + фрактальные скалы
+    Coast3D      = 5,  // морское побережье: берег - граница множества Мандельброта
 };
 
 inline const char* toString(FractalType t) {
@@ -22,6 +23,7 @@ inline const char* toString(FractalType t) {
         case FractalType::MengerSponge: return "MengerSponge";
         case FractalType::Julia3D:      return "Julia3D";
         case FractalType::Terrain3D:    return "Terrain3D";
+        case FractalType::Coast3D:      return "Coast3D";
     }
     return "Unknown";
 }
@@ -50,6 +52,9 @@ struct FractalParams {
     float cloudDensity      = 0.6f; // плотность облаков (Terrain3D)
     float treeDensity       = 0.5f; // плотность деревьев (Terrain3D)
     float timeOfDay         = 0.35f; // положение солнца (0..1, Terrain3D)
+    // центр плоскости Мандельброта, где находится «побережье» (Coast3D)
+    float coastCenterRe     = -0.74536f;
+    float coastCenterIm     = 0.11301f;
     bool  autoRotate  = false;
 
     bool operator==(const FractalParams& o) const {
@@ -61,7 +66,8 @@ struct FractalParams {
                terrainAmplitude == o.terrainAmplitude &&
                terrainFrequency == o.terrainFrequency &&
                cloudDensity == o.cloudDensity && treeDensity == o.treeDensity &&
-               timeOfDay == o.timeOfDay;
+               timeOfDay == o.timeOfDay &&
+               coastCenterRe == o.coastCenterRe && coastCenterIm == o.coastCenterIm;
     }
     bool operator!=(const FractalParams& o) const { return !(*this == o); }
 };
