@@ -326,7 +326,7 @@ float daylightLevel() {
 
 //  цвет террейна: песок -> трава -> камень -> снег
 //  slope = 1-n.y: 0=плоско, 1=обрыв. hn = h/amp: 0=низина, 1=пик.
-vec3 terrainColor(float h, float slope, float dist) {
+vec3 terrainColor(vec2 xz, float h, float slope, float dist) {
     float nt = daylightLevel();
     vec3 grass = vec3(0.22f, 0.36f, 0.13f);
     vec3 rock  = vec3(0.30f, 0.27f, 0.24f);
@@ -339,8 +339,12 @@ vec3 terrainColor(float h, float slope, float dist) {
     col = mix(col, rock, smoothstep(0.40f, 0.65f, slope));
     // вершины -> снег
     col = mix(col, snow, smoothstep(0.65f, 0.80f, hn));
+    // микро-текстура: крупные пятна травы/камня + мелкий гранул, чтобы не было
+    // плоской заливки цвета
+    float blotch = 0.90f + 0.20f * (fbm2(xz * 1.6f + 89.1f, 2) - 0.5f);
+    float grain = 0.92f + 0.16f * (fbm2(xz * 7.3f + 13.7f, 1) - 0.5f);
+    col *= blotch * grain;
     col *= mix(0.35f, 1.0f, nt);
-    col *= mix(0.55f, 1.0f, 1.0f / (1.0f + dist * 0.06f));
     return col;
 }
 
@@ -391,26 +395,33 @@ float cloudAlpha(vec3 ro, vec3 rd, float hitT) {
     return clamp(cover * density * 0.9f, 0.0f, 0.95f);
 }
 
+//  цвет неба: градиент + диск солнца + гало + тёплый горизонт
+vec3 skyGradient(vec3 rd, vec3 sun, float nt, vec3 horizon, vec3 zenith) {
+    float hUp = rd.y * 0.5f + 0.5f;
+    vec3 col = mix(horizon, zenith, pow(hUp, 0.55f));
+    col *= mix(0.12f, 1.0f, nt);
+    float sunHit = clamp(dot(rd, sun), 0.0f, 1.0f);
+    col += vec3(1.0f, 0.88f, 0.6f) * pow(sunHit, 220.0f) * 2.2f * nt; // диск
+    col += vec3(1.0f, 0.60f, 0.30f) * pow(sunHit, 7.0f) * 0.40f * nt;  // гало
+    return col;
+}
+
+//  экспоненциальная воздушная перспектива: дальние участки тонут в дымке
+vec3 applyFog(vec3 col, vec3 rd, vec3 sun, float nt, float dist) {
+    float sunHit = clamp(dot(rd, sun), 0.0f, 1.0f);
+    vec3 fog = vec3(0.62f, 0.71f, 0.87f);
+    fog += vec3(1.0f, 0.70f, 0.45f) * pow(sunHit, 5.0f) * 0.35f * nt;
+    float a = 1.0f - exp(-dist * 0.013f);
+    return mix(col, fog, clamp(a, 0.0f, 0.85f));
+}
+
 vec3 renderTerrain(vec3 ro, vec3 rd) {
     vec3 sun = sunDir();
     float nt = daylightLevel();
     float t = marchTerrain(ro, rd, 90.0f);
 
-    vec3 skyCol;
-    {
-        // градиент неба; ночью гаснет до тёмно-синего
-        float hUp = rd.y * 0.5f + 0.5f;
-        vec3 horizon = vec3(0.55f, 0.72f, 0.95f);
-        vec3 zenith = vec3(0.25f, 0.45f, 0.85f);
-        skyCol = mix(horizon, zenith, pow(hUp, 0.55f));
-        skyCol *= mix(0.12f, 1.0f, nt);            // ночное небо темнеет
-        // солнечный диск и закатная подсветка (только днём)
-        float sunHit = clamp(dot(rd, sun), 0.0f, 1.0f);
-        skyCol += vec3(1.0f, 0.88f, 0.6f) * pow(sunHit, 220.0f) * 2.2f * nt;
-        skyCol += vec3(1.0f, 0.6f, 0.3f) * pow(sunHit, 8.0f) * 0.35f * nt;
-    }
-
-    // небо (или далёкий горизонт), затем облака
+    vec3 skyCol = skyGradient(rd, sun, nt, vec3(0.55f, 0.72f, 0.95f),
+                              vec3(0.25f, 0.45f, 0.85f));
     vec3 col = skyCol;
     float cloudA = cloudAlpha(ro, rd, t);
     if (cloudA > 0.0f) {
@@ -426,12 +437,16 @@ vec3 renderTerrain(vec3 ro, vec3 rd) {
     // низкая точка => возможны деревья: проверяем SDF ели
     float dTree = treesDE(hit + n * 0.02f);
     if (dTree < 0.05f) {
-        // ель: тёмная хвоя, затенённая
+        // ель: оттенок и пятна хвои зависят от места, чтобы лес не был плоским
         float shade = clamp(dot(vec3(0.0f, 1.0f, 0.0f), sun), 0.0f, 1.0f);
-        return vec3(0.06f, 0.16f, 0.05f) * (0.4f + 0.6f * shade);
+        vec2 cl = floor(hit.xz);
+        vec3 crown = mix(vec3(0.05f, 0.14f, 0.04f), vec3(0.11f, 0.24f, 0.07f),
+                         hash12(cl + 19.7f));
+        float mottle = 0.78f + 0.40f * fbm2(hit.xz * 9.0f + cl * 3.0f, 1);
+        return crown * (0.35f + 0.65f * shade) * mottle;
     }
     if (dTree < 0.6f) {
-        // стvол/край кроны
+        // ствол/край кроны
         return mix(vec3(0.05f, 0.10f, 0.04f), vec3(0.16f, 0.13f, 0.08f),
                    smoothstep(0.0f, 0.6f, dTree));
     }
@@ -441,9 +456,11 @@ vec3 renderTerrain(vec3 ro, vec3 rd) {
     float ambient = 0.16f + 0.12f * clamp(n.y, 0.0f, 1.0f);
     float sky = 0.25f + 0.45f * clamp(n.y, 0.0f, 1.0f);
     float slope = 1.0f - clamp(n.y, 0.0f, 1.0f);
-    vec3 base = terrainColor(hit.y, slope, t);
+    vec3 base = terrainColor(hit.xz, hit.y, slope, t);
     vec3 light = base * (ambient + (diff + 0.35f * sky) * sh);
-    light = mix(light, col, clamp((t - 55.0f) * 0.045f, 0.0f, 0.8f)); // air perspective
+    // глубинная отдача: крутые ложбины получают меньше неба -> тёмные
+    light *= clamp(0.70f + 0.30f * n.y, 0.0f, 1.0f);
+    light = applyFog(light, rd, sun, nt, t);
     return light;
 }
 
@@ -570,19 +587,8 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
     float nt = daylightLevel();
     float t = marchCoast(ro, rd, 110.0f);
 
-    // небо (морской горизонт) — ночью гаснет, как и в пейзаже
-    vec3 skyCol;
-    {
-        float hUp = rd.y * 0.5f + 0.5f;
-        vec3 horizon = vec3(0.49f, 0.68f, 0.85f);
-        vec3 zenith = vec3(0.22f, 0.44f, 0.80f);
-        skyCol = mix(horizon, zenith, pow(hUp, 0.55f));
-        skyCol *= mix(0.12f, 1.0f, nt);
-        float sunHit = clamp(dot(rd, sun), 0.0f, 1.0f);
-        skyCol += vec3(1.0f, 0.88f, 0.6f) * pow(sunHit, 220.0f) * 2.2f * nt;
-        skyCol += vec3(1.0f, 0.6f, 0.3f) * pow(sunHit, 8.0f) * 0.35f * nt;
-    }
-
+    vec3 skyCol = skyGradient(rd, sun, nt, vec3(0.49f, 0.68f, 0.85f),
+                              vec3(0.22f, 0.44f, 0.80f));
     vec3 col = skyCol;
     float cloudA = cloudAlpha(ro, rd, t);
     if (cloudA > 0.0f) {
@@ -600,6 +606,7 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
         float diff = clamp(dot(n, sun), 0.0f, 1.0f);
         float sh = coastShadow(hit + n * 0.05f, sun);
         float sky = 0.28f + 0.42f * clamp(n.y, 0.0f, 1.0f);
+        float ambient = 0.16f + 0.12f * clamp(n.y, 0.0f, 1.0f);
         float slope = 1.0f - clamp(n.y, 0.0f, 1.0f);
         float hn = hit.y / max(uTerrainAmplitude, 0.01f);
         vec3 sand = vec3(0.76f, 0.68f, 0.45f);
@@ -607,9 +614,13 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
         vec3 rock = vec3(0.30f, 0.27f, 0.24f);
         vec3 base = mix(sand, green, smoothstep(0.08f, 0.30f, hn) * (1.0f - slope * 0.6f));
         base = mix(base, rock, smoothstep(0.55f, 0.75f, hn));
+        // та же микро-текстура, что и в пейзаже
+        float blotch = 0.90f + 0.20f * (fbm2(hit.xz * 1.6f + 89.1f, 2) - 0.5f);
+        float grain = 0.92f + 0.16f * (fbm2(hit.xz * 7.3f + 13.7f, 1) - 0.5f);
+        base *= blotch * grain;
         base *= mix(0.40f, 1.0f, nt);
-        col = base * (0.16f + 0.90f * (0.45f * (diff + 0.20f * (1.0f - sh)) + 0.55f * sky) * sh);
-        col = mix(col, skyCol, clamp((t - 70.0f) * 0.05f, 0.0f, 0.7f)); // морская дымка
+        col = base * (ambient + (diff + 0.35f * sky) * sh);
+        col = applyFog(col, rd, sun, nt, t);
     } else {
         // --- вода: глубокое море -> бирюзовое мелководье у берега
         float dw = cf.y;
@@ -618,12 +629,15 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
         vec3 shallow = vec3(0.10f, 0.46f, 0.42f);
         vec3 w = mix(deep, shallow, shore);
         w *= (0.45f + 0.5f * nt);
-        // блик солнца на волнах + френель-отражение неба (с облаками)
+        // френель-отражение неба (с облаками) + блик солнца
         float v = clamp(dot(n, -rd), 0.0f, 1.0f);
         float fres = pow(1.0f - v, 3.0f);
-        float spec = pow(clamp(dot(reflect(-sun, n), -rd), 0.0f, 1.0f), 90.0f);
+        float spec = clamp(dot(reflect(-sun, n), -rd), 0.0f, 1.0f);
         col = mix(w, col, fres * 0.85f);
-        col += vec3(1.0f, 0.95f, 0.8f) * spec * 0.8f * nt;
+        col += vec3(1.0f, 0.95f, 0.8f) * pow(spec, 90.0f) * 0.8f * nt;
+        // солнечная дорожка (мерцающие искры на волнах)
+        col += vec3(1.0f, 0.90f, 0.75f) * pow(spec, 6.0f) * 0.10f * nt *
+               (0.6f + 0.8f * fbm2(hit.xz * 1.4f, 1));
     }
     return col;
 }
