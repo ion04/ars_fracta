@@ -193,6 +193,8 @@ void ControlPanel::drawFractalSection() {
                             placeTerrainCamera(*camera_, p);
                         } else if (p.type == FractalType::Coast3D) {
                             placeCoastCamera(*camera_, p);
+                        } else {
+                            camera_->reset();   // фрактал в исходной позиции
                         }
                     }
                 }
