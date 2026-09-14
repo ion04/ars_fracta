@@ -275,7 +275,7 @@ float mapTerrain(vec3 p) {
 //  пересечение луча с terrain: возвращает t (или -1 если промах)
 float marchTerrain(vec3 ro, vec3 rd, float maxDist) {
     float t = 0.0f;
-    const float stepMin = 0.12f;
+    const float stepMin = 0.07f;
     int steps = max(uMaxSteps, 24);
     for (int i = 0; i < steps; ++i) {
         vec3 p = ro + rd * t;
@@ -324,36 +324,24 @@ float daylightLevel() {
     return smoothstep(-0.10f, 0.25f, el);
 }
 
-//  цвет террейна по высоте/уклону: песок -> трава -> камень -> снег
+//  цвет террейна: песок -> трава -> камень -> снег
+//  slope = 1-n.y: 0=плоско, 1=обрыв. hn = h/amp: 0=низина, 1=пик.
 vec3 terrainColor(float h, float slope, float dist) {
-    // ночной оттенок по времени суток (высота солнца -> ночь при el<0)
     float nt = daylightLevel();
     vec3 grass = vec3(0.22f, 0.36f, 0.13f);
-    vec3 rock = vec3(0.30f, 0.27f, 0.24f);
-    vec3 snow = vec3(0.82f, 0.87f, 0.93f);
-    vec3 sand = vec3(0.62f, 0.55f, 0.36f);
-    // пороги каменных зон и снеговой линии в долях амплитуды рельефа,
-    // чтобы внешний вид не зависел от абсолютной высоты
+    vec3 rock  = vec3(0.30f, 0.27f, 0.24f);
+    vec3 snow  = vec3(0.82f, 0.87f, 0.93f);
+    vec3 sand  = vec3(0.62f, 0.55f, 0.36f);
     float hn = h / max(uTerrainAmplitude, 0.01f);
-    float g = 1.0f - smoothstep(0.55f, 0.75f, 1.0f - slope); // внизу, полого => трава
-    vec3 col = mix(sand, grass, g);
-    col = mix(col, rock, smoothstep(0.35f, 0.55f, 1.0f - slope) * smoothstep(0.06f, 0.10f, hn));
-    col = mix(col, snow, smoothstep(0.105f, 0.16f, hn));
-    col *= mix(0.35f, 1.0f, nt);                   // night dimming
-    col *= mix(0.55f, 1.0f, 1.0f / (1.0f + dist * 0.06f)); // далёкий туман
+    // низины и пологие участки -> песок, slightly higher -> трава
+    vec3 col = mix(sand, grass, smoothstep(0.08f, 0.30f, hn));
+    // крутые склоны -> камень
+    col = mix(col, rock, smoothstep(0.40f, 0.65f, slope));
+    // вершины -> снег
+    col = mix(col, snow, smoothstep(0.65f, 0.80f, hn));
+    col *= mix(0.35f, 1.0f, nt);
+    col *= mix(0.55f, 1.0f, 1.0f / (1.0f + dist * 0.06f));
     return col;
-}
-
-//  дерево: SDF конуса (ствол+крона). p — локальная точка, offset y0 — база.
-float treeSDF(vec3 p, float baseY, float h) {
-    // буфер: позиции деревьев хешируются в ячейках сетки; здесь рисуем одну ель
-    float y = p.y - baseY;
-    if (y < 0.0f || y > h) return 1e9;
-    float r = 0.28f * (1.0f - y / h);             // крона: конус к вершине
-    float dSl = length(vec2(length(p.xz), y + 0.0f)) - r; // ~side
-    // простое приближение: расстояние до оси с радиусом по высоте
-    float dAxis = length(p.xz) - r;
-    return max(dAxis, -y);                        // палка (спрайт-замена стvora)
 }
 
 //  проверить деревья: объекты в сетке 1x1 вокруг xz; вернуть расстояние
@@ -450,10 +438,9 @@ vec3 renderTerrain(vec3 ro, vec3 rd) {
 
     float diff = clamp(dot(n, sun), 0.0f, 1.0f);
     float sh = terrainShadow(hit + n * 0.05f, sun);
-    float ambient = 0.16f + 0.12f * clamp(rd.y, -1.0f, 0.0f);
-    // мягкий свет от неба и отражение "склона"
+    float ambient = 0.16f + 0.12f * clamp(n.y, 0.0f, 1.0f);
     float sky = 0.25f + 0.45f * clamp(n.y, 0.0f, 1.0f);
-    float slope = length(vec2(dFdx(hit.y), dFdy(hit.y)));
+    float slope = 1.0f - clamp(n.y, 0.0f, 1.0f);
     vec3 base = terrainColor(hit.y, slope, t);
     vec3 light = base * (ambient + (diff + 0.35f * sky) * sh);
     light = mix(light, col, clamp((t - 55.0f) * 0.045f, 0.0f, 0.8f)); // air perspective
@@ -541,7 +528,7 @@ float mapCoast(vec3 p) {
 
 float marchCoast(vec3 ro, vec3 rd, float maxDist) {
     float t = 0.0f;
-    const float stepMin = 0.10f;
+    const float stepMin = 0.06f;
     int steps = max(uMaxSteps, 30);
     for (int i = 0; i < steps; ++i) {
         vec3 p = ro + rd * t;
@@ -554,12 +541,28 @@ float marchCoast(vec3 ro, vec3 rd, float maxDist) {
 }
 
 vec3 coastSurfNormal(vec2 xz) {
-    const float e = 0.06f;
+    // шаг сэмплирования масштабируется с zoom-ом: вблизи — мельче, вдали — крупнее
+    float e = 0.06f / max(sqrt(max(uM2dZoom, 0.01f)), 1.0f);
     float hL = coastSurface(xz - vec2(e, 0.0f));
     float hR = coastSurface(xz + vec2(e, 0.0f));
     float hD = coastSurface(xz - vec2(0.0f, e));
     float hU = coastSurface(xz + vec2(0.0f, e));
     return normalize(vec3(hL - hR, 2.0f * e, hD - hU));
+}
+
+//  тень на суше: короткий марш к солнцу (урезанный бюджет — суша дешевле террейна)
+float coastShadow(vec3 p, vec3 sunDir_) {
+    float t = 0.14f;
+    float res = 1.0f;
+    for (int i = 0; i < 10; ++i) {
+        vec3 q = p + sunDir_ * t;
+        float d = q.y - coastHeight(q.xz);
+        if (d < 0.0f) return 0.0f;
+        res = min(res, 4.0f * d / t);
+        t += clamp(d, 0.08f, 1.2f);
+        if (t > 28.0f) break;
+    }
+    return res;
 }
 
 vec3 renderCoast(vec3 ro, vec3 rd) {
@@ -595,16 +598,17 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
     if (land > 0.5f) {
         // --- суша: песчаный пляж у воды -> зелень -> скалы на вершинах
         float diff = clamp(dot(n, sun), 0.0f, 1.0f);
+        float sh = coastShadow(hit + n * 0.05f, sun);
         float sky = 0.28f + 0.42f * clamp(n.y, 0.0f, 1.0f);
-        float slope = length(vec2(dFdx(hit.y), dFdy(hit.y)));
+        float slope = 1.0f - clamp(n.y, 0.0f, 1.0f);
         float hn = hit.y / max(uTerrainAmplitude, 0.01f);
         vec3 sand = vec3(0.76f, 0.68f, 0.45f);
         vec3 green = vec3(0.21f, 0.35f, 0.12f);
         vec3 rock = vec3(0.30f, 0.27f, 0.24f);
-        vec3 base = mix(sand, green, smoothstep(0.0f, 0.35f, hn) * (1.0f - slope));
-        base = mix(base, rock, smoothstep(0.62f, 0.85f, hn));
+        vec3 base = mix(sand, green, smoothstep(0.08f, 0.30f, hn) * (1.0f - slope * 0.6f));
+        base = mix(base, rock, smoothstep(0.55f, 0.75f, hn));
         base *= mix(0.40f, 1.0f, nt);
-        col = base * (0.16f + 0.90f * (0.45f * diff + 0.55f * sky));
+        col = base * (0.16f + 0.90f * (0.45f * (diff + 0.20f * (1.0f - sh)) + 0.55f * sky) * sh);
         col = mix(col, skyCol, clamp((t - 70.0f) * 0.05f, 0.0f, 0.7f)); // морская дымка
     } else {
         // --- вода: глубокое море -> бирюзовое мелководье у берега
@@ -614,11 +618,11 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
         vec3 shallow = vec3(0.10f, 0.46f, 0.42f);
         vec3 w = mix(deep, shallow, shore);
         w *= (0.45f + 0.5f * nt);
-        // блик солнца на волнах + френель-отражение неба
+        // блик солнца на волнах + френель-отражение неба (с облаками)
         float v = clamp(dot(n, -rd), 0.0f, 1.0f);
         float fres = pow(1.0f - v, 3.0f);
         float spec = pow(clamp(dot(reflect(-sun, n), -rd), 0.0f, 1.0f), 90.0f);
-        col = mix(w, skyCol, fres * 0.85f);
+        col = mix(w, col, fres * 0.85f);
         col += vec3(1.0f, 0.95f, 0.8f) * spec * 0.8f * nt;
     }
     return col;
