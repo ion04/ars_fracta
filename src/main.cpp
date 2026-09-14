@@ -47,7 +47,10 @@ int main(int argc, char** argv) {
     if (!app.init()) return 1;
     // вид по умолчанию для пейзажа: камера над рельефом, смотрит на горизонт
     if (config.fractal.type == core::fractal::FractalType::Terrain3D) {
-        app.setCameraView(glm::vec3(10.0f, 3.5f, -14.0f), glm::vec3(0.0f, 2.0f, 0.0f));
+        // высота камеры зависит от амплитуды рельефа, чтобы не оказаться под горами
+        const float eyeY = std::max(3.5f, config.fractal.terrainAmplitude * 1.1f);
+        const glm::vec3 eye(10.0f, eyeY, -14.0f);
+        app.setCameraView(eye, eye + glm::vec3(-10.0f, -2.0f, 14.0f));
         app.setCameraFov(55.0f);
     }
 

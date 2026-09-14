@@ -314,19 +314,27 @@ vec3 sunDir() {
     return normalize(vec3(0.5f, 0.35f + 0.5f * sin(ang), -0.55f));
 }
 
+//  0..1: дневная освещённость (0 — ночь, 1 — день)
+float daylightLevel() {
+    float el = 0.35f + 0.5f * sin((uTimeOfDay - 0.25f) * 6.2831853f);
+    return smoothstep(-0.10f, 0.25f, el);
+}
+
 //  цвет террейна по высоте/уклону: песок -> трава -> камень -> снег
 vec3 terrainColor(float h, float slope, float dist) {
-    // ночной оттенок по времени суток
-    float day = 0.35f + 0.65f * clamp(0.35f + 0.5f * sin((uTimeOfDay - 0.25f) * 6.2831853f), 0.0f, 1.0f);
-    float nt = smoothstep(0.12f, 0.30f, day);     // освещённость суток
+    // ночной оттенок по времени суток (высота солнца -> ночь при el<0)
+    float nt = daylightLevel();
     vec3 grass = vec3(0.22f, 0.36f, 0.13f);
     vec3 rock = vec3(0.30f, 0.27f, 0.24f);
     vec3 snow = vec3(0.82f, 0.87f, 0.93f);
     vec3 sand = vec3(0.62f, 0.55f, 0.36f);
+    // пороги каменных зон и снеговой линии в долях амплитуды рельефа,
+    // чтобы внешний вид не зависел от абсолютной высоты
+    float hn = h / max(uTerrainAmplitude, 0.01f);
     float g = 1.0f - smoothstep(0.55f, 0.75f, 1.0f - slope); // внизу, полого => трава
     vec3 col = mix(sand, grass, g);
-    col = mix(col, rock, smoothstep(0.35f, 0.55f, 1.0f - slope) * smoothstep(0.35f, 0.6f, h));
-    col = mix(col, snow, smoothstep(0.62f, 0.95f, h));
+    col = mix(col, rock, smoothstep(0.35f, 0.55f, 1.0f - slope) * smoothstep(0.06f, 0.10f, hn));
+    col = mix(col, snow, smoothstep(0.105f, 0.16f, hn));
     col *= mix(0.35f, 1.0f, nt);                   // night dimming
     col *= mix(0.55f, 1.0f, 1.0f / (1.0f + dist * 0.06f)); // далёкий туман
     return col;
@@ -393,25 +401,29 @@ float cloudAlpha(vec3 ro, vec3 rd, float hitT) {
 
 vec3 renderTerrain(vec3 ro, vec3 rd) {
     vec3 sun = sunDir();
+    float nt = daylightLevel();
     float t = marchTerrain(ro, rd, 90.0f);
 
     vec3 skyCol;
     {
-        // градиент неба
+        // градиент неба; ночью гаснет до тёмно-синего
         float hUp = rd.y * 0.5f + 0.5f;
         vec3 horizon = vec3(0.55f, 0.72f, 0.95f);
         vec3 zenith = vec3(0.25f, 0.45f, 0.85f);
         skyCol = mix(horizon, zenith, pow(hUp, 0.55f));
-        // солнечный диск и закатная подсветка
+        skyCol *= mix(0.12f, 1.0f, nt);            // ночное небо темнеет
+        // солнечный диск и закатная подсветка (только днём)
         float sunHit = clamp(dot(rd, sun), 0.0f, 1.0f);
-        skyCol += vec3(1.0f, 0.88f, 0.6f) * pow(sunHit, 220.0f) * 2.2f;
-        skyCol += vec3(1.0f, 0.6f, 0.3f) * pow(sunHit, 8.0f) * 0.35f;
+        skyCol += vec3(1.0f, 0.88f, 0.6f) * pow(sunHit, 220.0f) * 2.2f * nt;
+        skyCol += vec3(1.0f, 0.6f, 0.3f) * pow(sunHit, 8.0f) * 0.35f * nt;
     }
 
     // небо (или далёкий горизонт), затем облака
     vec3 col = skyCol;
     float cloudA = cloudAlpha(ro, rd, t);
-    if (cloudA > 0.0f) col = mix(col, vec3(0.95f, 0.96f, 0.98f), cloudA);
+    if (cloudA > 0.0f) {
+        col = mix(col, vec3(0.95f, 0.96f, 0.98f) * (0.25f + 0.75f * nt), cloudA);
+    }
 
     if (t < 0.0f) {
         return col;                     // чистое небо

@@ -30,6 +30,17 @@ using utils::Config;
 static const char* kTypeNames[] = {
     "Mandelbrot 2D", "Mandelbulb 3D", "Menger Sponge", "Julia 3D", "Пейзаж"};
 
+// Камера над ландшафтом: высота зависит от амплитуды рельефа, чтобы камера
+// никогда не оказывалась под горами (иначе экран «чернеет» — марш снаружи
+// поверхности сразу возвращает t=0). Взгляд сохраняет неизменный наклон.
+static void placeTerrainCamera(render::Camera& cam,
+                               const core::fractal::FractalParams& p) {
+    const float eyeY = std::max(3.5f, p.terrainAmplitude * 1.1f);
+    const glm::vec3 eye(10.0f, eyeY, -14.0f);
+    cam.setView(eye, eye + glm::vec3(-10.0f, -2.0f, 14.0f));
+    cam.setFov(55.0f);
+}
+
 ControlPanel::ControlPanel(core::fractal::FractalParams& params,
                            render::Camera& camera, float* renderScale)
     : params_(&params), camera_(&camera), renderScale_(renderScale) {
@@ -89,9 +100,7 @@ void ControlPanel::drawFractalSection() {
             // центр 2D-вида берётся из камеры; сбрасываем, чтобы после
             // орбиты в 3D Мандельброт не «уехал» за пределы экрана.
             if (newType == FractalType::Terrain3D) {
-                camera_->setView(glm::vec3(0.0f, 2.0f, -14.0f),
-                                 glm::vec3(0.0f, 1.0f, 0.0f));
-                camera_->setFov(55.0f);
+                placeTerrainCamera(*camera_, p);
             } else {
                 camera_->reset();
             }
@@ -100,7 +109,13 @@ void ControlPanel::drawFractalSection() {
     }
 
     if (p.type == FractalType::Terrain3D) {
+        float prevAmp = p.terrainAmplitude;
         ImGui::SliderFloat("Высота рельефа", &p.terrainAmplitude, 1.0f, 20.0f, "%.1f");
+        // камера должна оставаться над горами при повышении рельефа
+        if (p.terrainAmplitude > prevAmp + 1e-4f &&
+            p.terrainAmplitude * 1.1f > camera_->position().y) {
+            placeTerrainCamera(*camera_, p);
+        }
         ImGui::SliderFloat("Масштаб шума", &p.terrainFrequency, 0.03f, 0.5f, "%.2f");
         ImGui::SliderFloat("Облачность", &p.cloudDensity, 0.0f, 1.5f, "%.2f");
         ImGui::SliderFloat("Плотность леса", &p.treeDensity, 0.0f, 1.0f, "%.2f");
@@ -152,9 +167,7 @@ void ControlPanel::drawFractalSection() {
                         typeIndex_ = static_cast<int>(p.type);
                         colorModeIdx_ = p.colorMode;
                         if (p.type == FractalType::Terrain3D) {
-                            camera_->setView(glm::vec3(10.0f, 3.5f, -14.0f),
-                                             glm::vec3(0.0f, 2.0f, 0.0f));
-                            camera_->setFov(55.0f);
+                            placeTerrainCamera(*camera_, p);
                         }
                     }
                 }
