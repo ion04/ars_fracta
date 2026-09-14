@@ -151,6 +151,11 @@ void ControlPanel::drawFractalSection() {
                     if (Config::loadFractal(path, p)) {
                         typeIndex_ = static_cast<int>(p.type);
                         colorModeIdx_ = p.colorMode;
+                        if (p.type == FractalType::Terrain3D) {
+                            camera_->setView(glm::vec3(10.0f, 3.5f, -14.0f),
+                                             glm::vec3(0.0f, 2.0f, 0.0f));
+                            camera_->setFov(55.0f);
+                        }
                     }
                 }
                 if (selected) ImGui::SetItemDefaultFocus();

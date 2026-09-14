@@ -145,6 +145,28 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
         iters = std::max(3, iters);
     }
     shader_.setInt("uIterations", iters);
+    // бюджет шагов ray marching / марша террейна зависит от типа и масштаба:
+    // Menger — толстые детали, хватает мало шагов; Mandelbulb/Julia — тонкие
+    // ветви, нужен запас шагов, иначе лучи проскакивают в щели; террейн —
+    // высотный марш, шаг по вертикальной дистанции, запас тоже важен.
+    // На низком масштабе деталей всё равно не видно, поэтому шаги режем.
+    int maxSteps;
+    switch (params.type) {
+        case core::fractal::FractalType::MengerSponge:
+            maxSteps = static_cast<int>(60 + 100 * renderScale_);
+            break;
+        case core::fractal::FractalType::Mandelbulb3D:
+        case core::fractal::FractalType::Julia3D:
+            maxSteps = static_cast<int>(140 + 160 * renderScale_);
+            break;
+        case core::fractal::FractalType::Terrain3D:
+            maxSteps = static_cast<int>(28 + 30 * renderScale_);
+            break;
+        default:
+            maxSteps = static_cast<int>(100 + 100 * renderScale_);
+            break;
+    }
+    shader_.setInt("uMaxSteps", maxSteps);
     shader_.setFloat("uBailout", params.bailout);
     shader_.setFloat("uPower", params.power);
     shader_.setVec3("uJuliaC", glm::vec3(params.juliaReal, params.juliaImag,

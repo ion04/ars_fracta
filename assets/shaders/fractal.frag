@@ -250,17 +250,17 @@ float terrainH(vec2 xz) {
     vec2 p = xz * uTerrainFrequency;
 
     // крупная форма рельефа + гребни (скалы вплетены домен-варпингом)
-    vec2 warp = vec2(fbm2(p + vec2(13.7, 9.2), 3),
-                     fbm2(p + vec2(5.1, 21.3), 3)) - 0.5f;
+    vec2 warp = vec2(fbm2(p + vec2(13.7, 9.2), 2),
+                     fbm2(p + vec2(5.1, 21.3), 2)) - 0.5f;
     vec2 wp = p + warp * 0.9f;
 
-    float base = fbm2(wp * 0.55f, 5);            // холмы и равнины
-    float ridge = ridge2(wp * 1.3f + 7.7f, 5);   // фрактальные хребты
+    float base = fbm2(wp * 0.55f, 4);            // холмы и равнины
+    float ridge = ridge2(wp * 1.3f + 7.7f, 3);   // фрактальные хребты
     // скалы доминируют там, где крупная форма поднята
     float h = mix(base, ridge, smoothstep(0.62f, 0.85f, base));
 
-    float detail = fbm2(p * 4.8f + 3.1f, 3);
-    h += (detail - 0.5f) * 0.14f;                 // мелкие камни
+    float detail = fbm2(p * 4.8f + 3.1f, 1);
+    h += (detail - 0.5f) * 0.10f;                 // мелкие камни
     return h * uTerrainAmplitude;                 // [0, amp]
 }
 
@@ -271,28 +271,29 @@ float mapTerrain(vec3 p) {
 //  пересечение луча с terrain: возвращает t (или -1 если промах)
 float marchTerrain(vec3 ro, vec3 rd, float maxDist) {
     float t = 0.0f;
-    const float stepMin = 0.06f;
-    for (int i = 0; i < 72; ++i) {
+    const float stepMin = 0.12f;
+    int steps = max(uMaxSteps, 24);
+    for (int i = 0; i < steps; ++i) {
         vec3 p = ro + rd * t;
         float d = mapTerrain(p);
         if (d < 0.0f) return t;                 // нос под землёй
-        t += clamp(d, stepMin, 1.5f);
+        t += clamp(d, stepMin, 2.0f);
         if (t > maxDist) break;
     }
     return -1.0f;
 }
 
 //  тень от солнца: короткий марш от точки к источнику света
-float terrainShadow(vec3 p, vec3 sunDir) {
-    float t = 0.12f;
+float terrainShadow(vec3 p, vec3 sunDir_) {
+    float t = 0.14f;
     float res = 1.0f;
-    for (int i = 0; i < 24; ++i) {
-        vec3 q = p + sunDir * t;
+    for (int i = 0; i < 14; ++i) {
+        vec3 q = p + sunDir_ * t;
         float d = mapTerrain(q);
         if (d < 0.0f) return 0.0f;
         res = min(res, 4.0f * d / t);
-        t += clamp(d, 0.05f, 0.8f);
-        if (t > 20.0f) break;
+        t += clamp(d, 0.08f, 1.2f);
+        if (t > 24.0f) break;
     }
     return res;
 }
