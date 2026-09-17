@@ -173,6 +173,24 @@ if(ARS_FRACTA_BUILD_TESTS)
     add_test(NAME compression COMMAND test_compression)
 endif()
 
+if(ARS_FRACTA_ENABLE_COVERAGE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    find_program(ARS_FRACTA_GCOVR_EXECUTABLE gcovr)
+    if(ARS_FRACTA_GCOVR_EXECUTABLE AND ARS_FRACTA_BUILD_TESTS)
+        add_custom_target(coverage
+            COMMAND ${CMAKE_CTEST_COMMAND} --test-dir "${CMAKE_CURRENT_BINARY_DIR}" --output-on-failure
+            COMMAND ${ARS_FRACTA_GCOVR_EXECUTABLE}
+                --root "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                --filter "${CMAKE_CURRENT_SOURCE_DIR}/src/core"
+                --object-directory "${CMAKE_CURRENT_BINARY_DIR}"
+                --txt
+                --html-details "${CMAKE_CURRENT_BINARY_DIR}/coverage.html"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+            COMMENT "Running tests and generating gcovr coverage report")
+    else()
+        message(STATUS "gcovr not found: coverage instrumentation is enabled, but the coverage target is unavailable")
+    endif()
+endif()
+
 # Keep diagnostics scoped to project targets; fetched third-party targets retain
 # their own warning policy.
 set(ARS_FRACTA_PROJECT_TARGETS ars_core ars_utils ars_compression)

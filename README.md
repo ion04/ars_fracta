@@ -40,6 +40,20 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
+Для измерения покрытия CPU-кода (GCC/MinGW) используется отдельная конфигурация:
+
+```sh
+cmake -S . -B build-coverage -DARS_FRACTA_BUILD_GUI=OFF \
+  -DARS_FRACTA_BUILD_TESTS=ON -DARS_FRACTA_ENABLE_COVERAGE=ON
+cmake --build build-coverage
+ctest --test-dir build-coverage --output-on-failure
+# При установленном gcovr:
+cmake --build build-coverage --target coverage
+```
+
+Покрытие относится к CPU-модулям, которые запускаются тестовым стендом; GUI/OpenGL
+и shader-only генерация в процент CPU-покрытия не включаются.
+
 Тест `test_compression` строит изображение множества Мандельброта, выполняет цикл
 «сжатие → восстановление» и проверяет качество (PSNR) и коэффициент сжатия.
 

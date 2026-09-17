@@ -17,6 +17,9 @@
 #include "compression/Metrics.h"
 #include "core/fractal/Mandelbulb3D.h"
 #include "core/fractal/Mandelbrot2D.h"
+#include "core/fractal/MengerSponge.h"
+#include "core/fractal/Julia3D.h"
+#include "core/fractal/Fractal.h"
 #include "core/math/Complex.h"
 #include "core/math/Vector3.h"
 #include "core/async/JobSystem.h"
@@ -101,6 +104,71 @@ int main() {
               "escapeTime(0,0) == maxIter (точка внутри)");
         const int e = core::fractal::Mandelbrot2D::escapeTime(outside, 100);
         check(e >= 0 && e < 100, "escapeTime(2,2) быстро убегает (t < 100)");
+    }
+
+    // --- Smoke generation for all six supported fractal types ---
+    {
+        using core::fractal::FractalParams;
+        using core::fractal::FractalType;
+        using core::math::Vector3;
+
+        const FractalType types[] = {
+            FractalType::Mandelbrot2D, FractalType::Mandelbulb3D,
+            FractalType::MengerSponge, FractalType::Julia3D,
+            FractalType::Terrain3D, FractalType::Coast3D};
+        bool namesPresent = true;
+        for (const auto type : types) namesPresent = namesPresent && std::string(core::fractal::toString(type)) != "Unknown";
+        check(namesPresent, "Все 6 типов фракталов зарегистрированы");
+
+        core::fractal::Mandelbrot2D mandelbrot;
+        FractalParams mandelbrotParams;
+        mandelbrotParams.type = FractalType::Coast3D;
+        mandelbrotParams.iterations = 4;
+        mandelbrot.apply(mandelbrotParams);
+        check(mandelbrot.type() == FractalType::Mandelbrot2D &&
+                  mandelbrot.params().iterations >= 16 &&
+                  std::isfinite(core::fractal::Mandelbrot2D::smoothEscapeTime({0.25, 0.1}, 32)),
+              "Mandelbrot2D генерирует конечное значение без ошибки");
+
+        core::fractal::Mandelbulb3D mandelbulb;
+        FractalParams mandelbulbParams;
+        mandelbulbParams.iterations = 4;
+        mandelbulbParams.power = 1.0f;
+        mandelbulb.apply(mandelbulbParams);
+        check(mandelbulb.type() == FractalType::Mandelbulb3D &&
+                  std::isfinite(core::fractal::Mandelbulb3D::distanceEstimate(
+                      Vector3(0.2, 0.1, 0.3), mandelbulb.params().power,
+                      mandelbulb.params().iterations)),
+              "Mandelbulb3D генерирует конечную оценку расстояния");
+
+        core::fractal::MengerSponge menger;
+        FractalParams mengerParams;
+        mengerParams.iterations = 0;
+        menger.apply(mengerParams);
+        check(menger.type() == FractalType::MengerSponge &&
+                  std::isfinite(core::fractal::MengerSponge::distanceEstimate(
+                      Vector3(0.1, 0.2, 0.3), menger.params().iterations)),
+              "MengerSponge генерирует конечную оценку расстояния");
+
+        core::fractal::Julia3D julia;
+        FractalParams juliaParams;
+        juliaParams.power = 1.0f;
+        juliaParams.iterations = 4;
+        julia.apply(juliaParams);
+        check(julia.type() == FractalType::Julia3D &&
+                  std::isfinite(core::fractal::Julia3D::distanceEstimate(
+                      Vector3(0.2, 0.1, 0.3), julia.constant(), julia.params().power,
+                      julia.params().iterations)),
+              "Julia3D генерирует конечную оценку расстояния");
+
+        std::ifstream shader("assets/shaders/fractal.frag");
+        const std::string shaderText((std::istreambuf_iterator<char>(shader)),
+                                     std::istreambuf_iterator<char>());
+        check(!shaderText.empty() && shaderText.find("uFractalType == 4") != std::string::npos &&
+                  shaderText.find("uFractalType == 5") != std::string::npos &&
+                  shaderText.find("renderTerrain") != std::string::npos &&
+                  shaderText.find("renderCoast") != std::string::npos,
+              "Terrain3D и Coast3D имеют shader-путь генерации");
     }
 
     // --- Асинхронные CPU-задачи: UI может опрашивать ready без ожидания ---
