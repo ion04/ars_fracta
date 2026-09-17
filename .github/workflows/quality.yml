@@ -1,0 +1,28 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux-headless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure headless build
+        run: cmake -S . -B build-quality -DARS_FRACTA_BUILD_GUI=OFF -DARS_FRACTA_BUILD_TESTS=ON -DARS_FRACTA_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build-quality --parallel
+      - name: Test
+        run: ctest --test-dir build-quality --output-on-failure
+
+  windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build-quality -DARS_FRACTA_BUILD_GUI=OFF -DARS_FRACTA_BUILD_TESTS=ON -DARS_FRACTA_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build-quality --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build-quality -C Release --output-on-failure

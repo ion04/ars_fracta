@@ -10,8 +10,16 @@
   - Menger Sponge (губка Менгера)
   - Julia 3D
 - Фрактальное сжатие изображений (IFS-кодирование по Жакину): энкодер, декодер, метрики MSE / PSNR / коэффициент сжатия.
+- Отменяемая асинхронная генерация и компрессия в CPU worker без блокировки GUI.
+- Построение внешней поверхности губки Менгера и экспорт в Wavefront OBJ и binary STL.
 - GUI на Dear ImGui: панель параметров, пресеты (JSON), статусная строка.
 - Загрузка/сохранение PNG (stb_image), конфигурация приложения (nlohmann/json).
+
+Экспорт губки Менгера доступен в панели «Фрактальное сжатие». Глубина
+итераций выбирается отдельно в диапазоне 0..4. Построение выполняется в worker;
+отмена проверяется при построении, финальная запись файлов не прерывается.
+Файл OBJ содержит независимые треугольники с внешним порядком обхода;
+STL записывается в стандартном binary-формате.
 
 ## Сборка
 
@@ -46,7 +54,9 @@ ctest --test-dir build -C Release --output-on-failure
 │   ├── main.cpp
 │   ├── core/
 │   │   ├── math/               # Complex, Vector3, Matrix4
-│   │   └── fractal/            # Fractal (базовый) + Mandelbrot2D/Mandelbulb3D/MengerSponge/Julia3D
+│   │   ├── async/              # CancellationToken и joinable CPU Job
+│   │   ├── export/             # OBJ и binary STL
+│   │   └── fractal/            # CPU/GLSL-фракталы и MengerMesh
 │   ├── render/                 # Window, Shader, Camera, Renderer (OpenGL)
 │   ├── compression/            # Encoder, Decoder, Metrics
 │   ├── gui/                    # MainWindow, ControlPanel, Viewport (ImGui)

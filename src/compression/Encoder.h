@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -45,9 +46,15 @@ public:
 
     /**
      * @brief Кодирование полутонового изображения (grayscale, channels == 1).
+     * @param grayscale Source grayscale image.
+     * @param blockSize Range block edge in pixels.
+     * @param domainScale Domain-to-range size multiplier.
+     * @param isCancelled Optional cooperative cancellation callback; returns an
+     * empty EncodedImage when requested. Exceptions from the callback propagate.
      */
     EncodedImage encode(const utils::Image& grayscale, int blockSize = 8,
-                        int domainScale = 2);
+                        int domainScale = 2,
+                        const std::function<bool()>& isCancelled = {});
 };
 
 } // namespace ars::compression

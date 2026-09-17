@@ -108,7 +108,8 @@ bool Encoder::EncodedImage::readFile(const std::string& path, EncodedImage& out)
 // ---------------------------------------------------------------------------
 
 Encoder::EncodedImage Encoder::encode(const utils::Image& gray, int blockSize,
-                                      int domainScale) {
+                                       int domainScale,
+                                       const std::function<bool()>& isCancelled) {
     EncodedImage result;
     if (gray.channels != 1 || gray.data.empty() || blockSize <= 0 ||
         blockSize > 8 || domainScale <= 1) {
@@ -138,6 +139,7 @@ Encoder::EncodedImage Encoder::encode(const utils::Image& gray, int blockSize,
     };
     std::vector<Domain> pool;
     for (int dy = 0; dy + domainSize <= h; dy += stride) {
+        if (isCancelled && isCancelled()) return {};
         for (int dx = 0; dx + domainSize <= w; dx += stride) {
             Domain d;
             d.ox = dx;
@@ -178,6 +180,7 @@ Encoder::EncodedImage Encoder::encode(const utils::Image& gray, int blockSize,
     std::vector<BlockCode>& codes = result.codes;
 
     for (int ry = 0; ry + n <= h; ry += n) {
+        if (isCancelled && isCancelled()) return {};
         for (int rx = 0; rx + n <= w; rx += n) {
             double rSum = 0.0;
             for (int r = 0; r < n; ++r) {

@@ -1,0 +1,9 @@
+PROJECT_NAME           = "ars_fracta"
+OUTPUT_DIRECTORY       = @DOXYGEN_OUTPUT_DIRECTORY@
+INPUT                  = @CMAKE_CURRENT_SOURCE_DIR@/src
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.hpp
+EXTRACT_ALL             = YES
+QUIET                  = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO

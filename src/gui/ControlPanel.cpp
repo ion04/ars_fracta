@@ -3,7 +3,9 @@
 #include "compression/Decoder.h"
 #include "compression/Encoder.h"
 #include "compression/Metrics.h"
+#include "core/export/MeshExporter.h"
 #include "core/fractal/Mandelbrot2D.h"
+#include "core/fractal/MengerMesh.h"
 #include "render/Camera.h"
 #include "utils/Config.h"
 #include "utils/ImageLoader.h"
@@ -13,13 +15,20 @@
 #include <glm/glm.hpp>
 
 #include <algorithm>
-#include <cstdio>
+#include <exception>
 #include <filesystem>
+#include <memory>
+#include <sstream>
 #include <string>
 
 namespace fs = std::filesystem;
 
 namespace ars::gui {
+
+struct ControlPanel::CompressionResult {
+    bool cancelled = false;
+    std::string info;
+};
 
 using core::fractal::FractalParams;
 using core::fractal::FractalType;
@@ -217,14 +226,29 @@ void ControlPanel::drawFractalSection() {
 // ---------------------------------------------------------------------------
 
 void ControlPanel::drawCompressionSection() {
+    pollCompressionJob();
     ImGui::Text("Фрактальное сжатие");
+    const bool running = static_cast<bool>(compressionResult_);
+    if (running) ImGui::BeginDisabled();
     if (ImGui::Button("Сжать вид (Mandelbrot 2D, 256x256)")) {
         compressCurrentView();
+    }
+    if (running) ImGui::EndDisabled();
+    if (running) {
+        ImGui::SameLine();
+        if (ImGui::Button("Отмена")) compressionJob_.cancel();
+        ImGui::TextUnformatted("Выполняется в фоне...");
     }
     if (compressionDone_) {
         ImGui::Spacing();
         ImGui::TextWrapped("%s", compressionInfo_.c_str());
     }
+    ImGui::SliderInt("Глубина mesh Менгера", &meshIterations_, 0, 4);
+    ImGui::BeginDisabled(static_cast<bool>(compressionResult_));
+    if (ImGui::Button("Экспортировать губку Менгера (OBJ + STL)")) {
+        exportMengerMesh();
+    }
+    ImGui::EndDisabled();
 }
 
 void ControlPanel::compressCurrentView() {
@@ -237,47 +261,106 @@ void ControlPanel::compressCurrentView() {
     const double zoom = std::max(0.05, static_cast<double>(params_->m2dZoom));
     const double scale = 3.5 / zoom;
 
-    utils::Image img;
-    img.width = size;
-    img.height = size;
-    img.channels = 1;
-    img.data.resize(static_cast<std::size_t>(size) * size);
+    compressionDone_ = false;
+    compressionInfo_.clear();
+    compressionResult_ = std::make_shared<CompressionResult>();
+    const auto result = compressionResult_;
+    compressionJob_ = core::async::JobSystem::submit(
+        [result, size, maxIter, cx, cy, scale](const auto& token) {
+            utils::Image img;
+            img.width = size;
+            img.height = size;
+            img.channels = 1;
+            img.data.resize(static_cast<std::size_t>(size) * size);
+            for (int y = 0; y < size; ++y) {
+                if (token.isCancelled()) {
+                    result->cancelled = true;
+                    return;
+                }
+                for (int x = 0; x < size; ++x) {
+                    const double u = (static_cast<double>(x) + 0.5) / size - 0.5;
+                    const double v = (static_cast<double>(y) + 0.5) / size - 0.5;
+                    const Complex c(cx + u * scale, cy + v * scale);
+                    const int it = Mandelbrot2D::escapeTime(c, maxIter);
+                    img.data[static_cast<std::size_t>(y) * size + x] =
+                        static_cast<std::uint8_t>((it * 255) / maxIter);
+                }
+            }
 
-    for (int y = 0; y < size; ++y) {
-        for (int x = 0; x < size; ++x) {
-            const double u = (static_cast<double>(x) + 0.5) / size - 0.5;
-            const double v = (static_cast<double>(y) + 0.5) / size - 0.5;
-            const Complex c(cx + u * scale, cy + v * scale);
-            const int it = Mandelbrot2D::escapeTime(c, maxIter);
-            img.data[static_cast<std::size_t>(y) * size + x] =
-                static_cast<std::uint8_t>((it * 255) / maxIter);
+            compression::Encoder encoder;
+            const auto encoded = encoder.encode(
+                img, 8, 2, [&token] { return token.isCancelled(); });
+            if (token.isCancelled()) {
+                result->cancelled = true;
+                return;
+            }
+            if (encoded.codes.empty()) {
+                result->info = "Ошибка: кодер не вернул результат";
+                return;
+            }
+
+            const auto decoded = compression::Decoder::decode(encoded, 8);
+            const double mse = compression::computeMSE(img, decoded);
+            const double psnr = compression::computePSNR(mse);
+            const double ratio = compression::compressionRatio(img.data.size(), encoded.byteSize());
+            if (token.isCancelled()) {
+                result->cancelled = true;
+                return;
+            }
+            const bool filesSaved = utils::ImageLoader::savePng("fractal_original.png", img) &&
+                                    utils::ImageLoader::savePng("fractal_decoded.png", decoded) &&
+                                    encoded.writeFile("fractal_compressed.frax");
+            std::ostringstream info;
+            info.precision(2);
+            info << std::fixed << "MSE: " << mse << "\nPSNR: " << psnr
+                 << " dB\nКоэффициент сжатия: " << ratio << ":1\n";
+            if (filesSaved) {
+                info << "Сохранено: fractal_original.png, fractal_decoded.png, "
+                        "fractal_compressed.frax";
+            } else {
+                info << "Ошибка записи одного или нескольких файлов";
+            }
+            result->info = info.str();
+        });
+}
+
+void ControlPanel::pollCompressionJob() {
+    if (!compressionResult_ || !compressionJob_.ready()) return;
+    try {
+        compressionJob_.wait();
+        compressionInfo_ = compressionResult_->cancelled ? "Операция отменена"
+                                                         : compressionResult_->info;
+        compressionDone_ = true;
+    } catch (const std::exception& error) {
+        compressionInfo_ = std::string("Ошибка фоновой задачи: ") + error.what();
+        compressionDone_ = true;
+    } catch (...) {
+        compressionInfo_ = "Неизвестная ошибка фоновой задачи";
+        compressionDone_ = true;
+    }
+    compressionResult_.reset();
+}
+
+void ControlPanel::exportMengerMesh() {
+    compressionDone_ = false;
+    compressionResult_ = std::make_shared<CompressionResult>();
+    const auto result = compressionResult_;
+    const int depth = meshIterations_;
+    compressionJob_ = core::async::JobSystem::submit([result, depth](const auto& token) {
+        const auto mesh = core::fractal::MengerMesh::build(
+            depth, [&token] { return token.isCancelled(); });
+        if (token.isCancelled()) {
+            result->cancelled = true;
+            return;
         }
-    }
-
-    compression::Encoder enc;
-    const auto encoded = enc.encode(img, 8, 2);
-    if (encoded.codes.empty()) {
-        compressionInfo_ = "Ошибка: кодер не вернул результат (изображение слишком маленькое?)";
-        compressionDone_ = false;
-        return;
-    }
-
-    const auto decoded = compression::Decoder::decode(encoded, 8);
-    const double mse = compression::computeMSE(img, decoded);
-    const double psnr = compression::computePSNR(mse);
-    const double ratio = compression::compressionRatio(img.data.size(), encoded.byteSize());
-
-    utils::ImageLoader::savePng("fractal_original.png", img);
-    utils::ImageLoader::savePng("fractal_decoded.png", decoded);
-    encoded.writeFile("fractal_compressed.frax");
-
-    char buf[512];
-    std::snprintf(buf, sizeof(buf),
-                  "MSE: %.2f\nPSNR: %.2f dB\nКоэффициент сжатия: %.2f:1\n"
-                  "Сохранено: fractal_original.png, fractal_decoded.png, fractal_compressed.frax",
-                  mse, psnr, ratio);
-    compressionInfo_ = buf;
-    compressionDone_ = true;
+        // File writing is a non-cancellable final stage; UI keeps polling the worker.
+        const bool objSaved = core::exporter::MeshExporter::writeObj("menger_sponge.obj", mesh);
+        const bool stlSaved = core::exporter::MeshExporter::writeBinaryStl("menger_sponge.stl", mesh);
+        result->info = objSaved && stlSaved
+            ? "Сохранено: menger_sponge.obj, menger_sponge.stl (" +
+                  std::to_string(mesh.triangleCount()) + " треугольников)"
+            : "Ошибка экспорта губки Менгера";
+    });
 }
 
 } // namespace ars::gui

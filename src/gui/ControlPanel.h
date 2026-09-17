@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "core/async/JobSystem.h"
 #include "core/fractal/Fractal.h"
 
 namespace ars::render {
@@ -32,6 +33,8 @@ private:
     void drawFractalSection();
     void drawCompressionSection();
     void compressCurrentView();
+    void pollCompressionJob();
+    void exportMengerMesh();
     void loadPresetsIntoList();
 
     core::fractal::FractalParams* params_ = nullptr;
@@ -50,6 +53,10 @@ private:
     // результат последнего сжатия
     bool compressionDone_ = false;
     std::string compressionInfo_;
+    struct CompressionResult;
+    std::shared_ptr<CompressionResult> compressionResult_;
+    core::async::Job compressionJob_;
+    int meshIterations_ = 2;
 };
 
 } // namespace ars::gui
