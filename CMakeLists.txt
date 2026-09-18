@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(ars_fracta
     VERSION 0.1.0
-    DESCRIPTION "Fractal rendering and fractal compression (coursework)"
+    DESCRIPTION "Fractal rendering (coursework)"
     LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -108,6 +108,7 @@ add_library(ars_core STATIC
     src/core/fractal/MengerMesh.cpp
     src/core/fractal/Mandelbrot2D.cpp
     src/core/fractal/Mandelbulb3D.cpp
+    src/core/fractal/FractalValidation.cpp
     src/core/fractal/MengerSponge.cpp
     src/core/fractal/Julia3D.cpp)
 target_include_directories(ars_core PUBLIC src)
@@ -120,14 +121,6 @@ add_library(ars_utils STATIC
     src/utils/Logger.cpp)
 target_include_directories(ars_utils PUBLIC src)
 target_link_libraries(ars_utils PUBLIC stb nlohmann_json::nlohmann_json ars_core)
-
-# --- compression: fractal image compression ----------------------------------
-add_library(ars_compression STATIC
-    src/compression/Encoder.cpp
-    src/compression/Decoder.cpp
-    src/compression/Metrics.cpp)
-target_include_directories(ars_compression PUBLIC src)
-target_link_libraries(ars_compression PUBLIC ars_utils ars_core)
 
 # --- render: OpenGL rendering ------------------------------------------------
 if(ARS_FRACTA_BUILD_GUI)
@@ -146,14 +139,14 @@ if(ARS_FRACTA_BUILD_GUI)
         src/gui/ControlPanel.cpp
         src/gui/Viewport.cpp)
     target_include_directories(ars_gui PUBLIC src)
-    target_link_libraries(ars_gui PUBLIC ars_core ars_render ars_utils ars_compression
+    target_link_libraries(ars_gui PUBLIC ars_core ars_render ars_utils
                                       imgui glm::glm)
     target_compile_definitions(ars_gui PUBLIC ARS_FRACTA_ASSETS_DIR="${ARS_FRACTA_ASSETS_DIR}")
 
     # --- main executable ------------------------------------------------------
     add_executable(ars_fracta src/main.cpp)
     target_include_directories(ars_fracta PRIVATE src)
-    target_link_libraries(ars_fracta PRIVATE ars_gui ars_compression)
+    target_link_libraries(ars_fracta PRIVATE ars_gui)
     target_compile_definitions(ars_fracta PRIVATE ARS_FRACTA_ASSETS_DIR="${ARS_FRACTA_ASSETS_DIR}")
 
     # Перекопируем ассеты (шейдеры, пресеты) при каждой сборке, чтобы правки
@@ -167,10 +160,11 @@ endif()
 # --- tests --------------------------------------------------------------------
 if(ARS_FRACTA_BUILD_TESTS)
     enable_testing()
-    add_executable(test_compression tests/test_compression.cpp)
-    target_include_directories(test_compression PRIVATE src)
-    target_link_libraries(test_compression PRIVATE ars_core ars_compression ars_utils)
-    add_test(NAME compression COMMAND test_compression)
+    add_executable(test_core tests/test_core.cpp)
+    target_include_directories(test_core PRIVATE src)
+    target_link_libraries(test_core PRIVATE ars_core ars_utils)
+    add_test(NAME core COMMAND test_core)
+    set_tests_properties(core PROPERTIES TIMEOUT 120)
 endif()
 
 if(ARS_FRACTA_ENABLE_COVERAGE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -193,12 +187,12 @@ endif()
 
 # Keep diagnostics scoped to project targets; fetched third-party targets retain
 # their own warning policy.
-set(ARS_FRACTA_PROJECT_TARGETS ars_core ars_utils ars_compression)
+set(ARS_FRACTA_PROJECT_TARGETS ars_core ars_utils)
 if(ARS_FRACTA_BUILD_GUI)
     list(APPEND ARS_FRACTA_PROJECT_TARGETS ars_render ars_gui ars_fracta)
 endif()
 if(ARS_FRACTA_BUILD_TESTS)
-    list(APPEND ARS_FRACTA_PROJECT_TARGETS test_compression)
+    list(APPEND ARS_FRACTA_PROJECT_TARGETS test_core)
 endif()
 foreach(target IN LISTS ARS_FRACTA_PROJECT_TARGETS)
     if(MSVC)

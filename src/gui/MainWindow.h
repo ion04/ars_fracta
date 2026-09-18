@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <string>
+#include <vector>
+#include <cstdint>
 
 #include "core/fractal/Fractal.h"
 
@@ -36,6 +38,7 @@ public:
     // вид по умолчанию для пейзажа (используется в main.cpp)
     void setCameraView(const glm::vec3& eye, const glm::vec3& aim);
     void setCameraFov(float fovDeg);
+    bool captureFrame(std::vector<std::uint8_t>& pixels, int& width, int& height) const;
 
 private:
     void handleInput();

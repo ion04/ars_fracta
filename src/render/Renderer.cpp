@@ -41,6 +41,11 @@ bool Renderer::init() {
     }
 
     ensureFramebuffer(window_->width(), window_->height());
+    if (!fbo_ || width_ <= 0 || height_ <= 0) {
+        std::cerr << "[Renderer] Cannot create framebuffer (size "
+                  << width_ << "x" << height_ << ")\n";
+        return false;
+    }
     return true;
 }
 
@@ -80,19 +85,35 @@ void Renderer::ensureFramebuffer(int w, int h) {
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         std::cerr << "[Renderer] Framebuffer incomplete: 0x" << std::hex << status << std::endl;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDeleteFramebuffers(1, &fbo_);
+        glDeleteTextures(1, &colorTex_);
+        glDeleteRenderbuffers(1, &depthRbo_);
+        fbo_ = 0;
+        colorTex_ = 0;
+        depthRbo_ = 0;
+        width_ = 0;
+        height_ = 0;
+        return;
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 bool Renderer::renderFrame(const core::fractal::FractalParams& params, float timeSec) {
-    const int targetW = static_cast<int>(window_->width() * renderScale_);
-    const int targetH = static_cast<int>(window_->height() * renderScale_);
+    const float terrainQuality = params.type == core::fractal::FractalType::Terrain3D
+        ? 1.15f : 1.0f;
+    const int targetW = static_cast<int>(window_->width() * renderScale_ * terrainQuality);
+    const int targetH = static_cast<int>(window_->height() * renderScale_ * terrainQuality);
     ensureFramebuffer(targetW, targetH);
 
     const uint64_t camRev = camera_.revision();
+    const bool animated =
+        params.type == core::fractal::FractalType::Coast3D ||
+        (params.type == core::fractal::FractalType::Terrain3D &&
+         params.cloudDensity > 0.0f);
     const bool stateChanged =
         !lastRendered_ || params != lastParams_ || camRev != lastCameraRev_ ||
-        targetW != lastW_ || targetH != lastH_;
+        targetW != lastW_ || targetH != lastH_ || animated;
     lastParams_ = params;
     lastCameraRev_ = camRev;
     lastW_ = targetW;
@@ -162,7 +183,7 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
             maxSteps = static_cast<int>(140 + 160 * renderScale_);
             break;
         case core::fractal::FractalType::Terrain3D:
-            maxSteps = static_cast<int>(28 + 30 * renderScale_);
+            maxSteps = static_cast<int>(54 + 70 * renderScale_);
             break;
         case core::fractal::FractalType::Coast3D:
             maxSteps = static_cast<int>(30 + 40 * renderScale_);
@@ -194,6 +215,31 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+    return true;
+}
+
+bool Renderer::captureFrame(std::vector<std::uint8_t>& pixels) const {
+    if (!fbo_ || width_ <= 0 || height_ <= 0) return false;
+
+    pixels.resize(static_cast<std::size_t>(width_) * static_cast<std::size_t>(height_) * 4u);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo_);
+    glReadPixels(0, 0, width_, height_, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    if (glGetError() != GL_NO_ERROR) {
+        pixels.clear();
+        return false;
+    }
+
+    // OpenGL's origin is bottom-left; image files conventionally use top-left.
+    const std::size_t rowBytes = static_cast<std::size_t>(width_) * 4u;
+    std::vector<std::uint8_t> row(rowBytes);
+    for (int y = 0; y < height_ / 2; ++y) {
+        auto* top = pixels.data() + static_cast<std::size_t>(y) * rowBytes;
+        auto* bottom = pixels.data() + static_cast<std::size_t>(height_ - 1 - y) * rowBytes;
+        std::copy(top, top + rowBytes, row.begin());
+        std::copy(bottom, bottom + rowBytes, top);
+        std::copy(row.begin(), row.end(), bottom);
+    }
     return true;
 }
 

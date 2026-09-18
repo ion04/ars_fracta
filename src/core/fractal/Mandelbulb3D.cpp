@@ -3,34 +3,13 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/fractal/SphericalDistance.h"
+
 namespace ars::core::fractal {
 
 double Mandelbulb3D::distanceEstimate(const math::Vector3& p, double power, int iterations) {
-    using math::Vector3;
-    Vector3 z = p;
-    double dr = 1.0;
-    double r = 0.0;
-
-    for (int i = 0; i < iterations; ++i) {
-        r = z.length();
-        if (r > 2.0) break;
-        if (r < 1e-12) break;
-
-        const double theta = std::acos(z.z / r);
-        const double phi = std::atan2(z.y, z.x);
-
-        dr = std::pow(r, power - 1.0) * power * dr + 1.0;
-        const double zr = std::pow(r, power);
-        const double th = theta * power;
-        const double ph = phi * power;
-
-        z = Vector3(zr * std::sin(th) * std::cos(ph),
-                    zr * std::sin(th) * std::sin(ph),
-                    zr * std::cos(th)) + p;
-    }
-
-    r = std::max(r, 1e-12);
-    return 0.5 * std::log(r) * r / dr;
+    // Мандельбульб: z_{n+1} = z^n + p, старт из p.
+    return sphericalDistanceEstimate(p, p, power, iterations);
 }
 
 FractalParams Mandelbulb3D::sanitize(const FractalParams& p) const {

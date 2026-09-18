@@ -97,4 +97,13 @@ protected:
     FractalParams params_{};
 };
 
+/**
+ * @brief Валидация произвольных параметров по их типу (удобная обёртка над apply()).
+ *
+ * Выбирает соответствующий CPU-класс по params.type и прогоняет параметры через
+ * его sanitize(). Для Terrain3D/Coast3D CPU-класса нет — параметры возвращаются
+ * без изменений. Идемпотентна: повторный вызов не меняет уже валидные значения.
+ */
+FractalParams sanitizeParams(const FractalParams& raw);
+
 } // namespace ars::core::fractal

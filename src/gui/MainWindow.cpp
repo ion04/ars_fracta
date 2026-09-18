@@ -29,6 +29,14 @@ void MainWindow::setCameraFov(float fovDeg) {
     if (renderer_) renderer_->camera().setFov(fovDeg);
 }
 
+bool MainWindow::captureFrame(std::vector<std::uint8_t>& pixels,
+                              int& width, int& height) const {
+    if (!renderer_ || !renderer_->captureFrame(pixels)) return false;
+    width = renderer_->width();
+    height = renderer_->height();
+    return true;
+}
+
 MainWindow::~MainWindow() {
     if (ImGui::GetCurrentContext()) {
         ImGui_ImplOpenGL3_Shutdown();
@@ -104,8 +112,13 @@ void MainWindow::runFrame(float deltaTime) {
     // Масштаб подстраивается под целевую длительность кадра (dt ~16 мс):
     // зависаем (dt>цели) -> снижаем масштаб, есть запас -> повышаем (до полного).
     // При остановке рендерим один кадр в полном качестве.
+    const bool animatedScene =
+        params_.type == core::fractal::FractalType::Coast3D ||
+        (params_.type == core::fractal::FractalType::Terrain3D &&
+         params_.cloudDensity > 0.0f);
     const bool sceneMoving =
-        params_.autoRotate || renderer_->camera().revision() != lastCameraRev_ ||
+        animatedScene || params_.autoRotate ||
+        renderer_->camera().revision() != lastCameraRev_ ||
         !(params_ == lastParams_);
     lastCameraRev_ = renderer_->camera().revision();
     lastParams_ = params_;

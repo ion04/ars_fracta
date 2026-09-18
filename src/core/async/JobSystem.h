@@ -41,7 +41,11 @@ public:
     void cancel() noexcept;
     /** @return true if the worker has finished (successfully or exceptionally). */
     bool ready() const noexcept;
-    /** Wait for completion and rethrow an exception raised by the worker. */
+    /**
+     * Wait for completion and rethrow an exception raised by the worker.
+     * Throws std::logic_error when invoked from the task's own worker thread
+     * (guards against a self-join deadlock instead of hanging).
+     */
     void wait();
     /** @return true if cancellation was requested, not proof the task stopped. */
     bool cancelled() const noexcept;

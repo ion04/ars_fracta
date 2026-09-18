@@ -275,12 +275,25 @@ float mapTerrain(vec3 p) {
 //  пересечение луча с terrain: возвращает t (или -1 если промах)
 float marchTerrain(vec3 ro, vec3 rd, float maxDist) {
     float t = 0.0f;
+    float previousT = 0.0f;
     const float stepMin = 0.07f;
     int steps = max(uMaxSteps, 24);
     for (int i = 0; i < steps; ++i) {
         vec3 p = ro + rd * t;
         float d = mapTerrain(p);
-        if (d < 0.0f) return t;                 // нос под землёй
+        if (d < 0.0f) {
+            // Height fields are not true SDFs. Refine the sign-change bracket
+            // instead of returning the first overshot sample.
+            float lo = previousT;
+            float hi = t;
+            for (int j = 0; j < 6; ++j) {
+                float mid = 0.5f * (lo + hi);
+                if (mapTerrain(ro + rd * mid) < 0.0f) hi = mid;
+                else lo = mid;
+            }
+            return 0.5f * (lo + hi);
+        }
+        previousT = t;
         t += clamp(d, stepMin, 2.0f);
         if (t > maxDist) break;
     }
@@ -317,7 +330,7 @@ vec3 sunDir() {
     float ang = (uTimeOfDay - 0.25f) * 3.14159265f * 2.0f;
     // солнце ВПЕРЕДИ камеры: светит на склоны террейна И побережья,
     // даёт солнечную дорожку на море. Пейзаж и побережье оба смотрят +z.
-    return normalize(vec3(0.5f, 0.35f + 0.5f * sin(ang), 0.55f));
+    return normalize(vec3(0.45f, 0.42f + 0.58f * sin(ang), 0.72f));
 }
 
 //  0..1: дневная освещённость (0 — ночь, 1 — день)
@@ -346,10 +359,14 @@ vec3 terrainColor(vec2 xz, float h, float slope, float dist) {
     // живые пятна: прохладные луга и тёплые поля чередуются
     float veg = fbm2(xz * 1.1f + 7.7f, 1);
     col = mix(col * vec3(0.80f, 0.94f, 0.72f), col, veg);
-    // крутые склоны -> камень
-    col = mix(col, rock, smoothstep(0.40f, 0.65f, slope));
-    // вершины -> снег
-    col = mix(col, snow, smoothstep(0.65f, 0.80f, hn));
+    // Rock emerges gradually on steep, elevated faces; noise breaks up bands.
+    float rockMask = smoothstep(0.38f, 0.70f, slope + hn * 0.18f -
+                                (fbm2(xz * 0.75f + 41.0f, 2) - 0.5f) * 0.10f);
+    col = mix(col, rock, rockMask);
+    // Snow is limited to genuinely high ground and softens on exposed rock.
+    float snowMask = smoothstep(0.72f, 0.92f, hn - slope * 0.12f +
+                                (fbm2(xz * 0.45f + 11.0f, 2) - 0.5f) * 0.08f);
+    col = mix(col, snow, snowMask);
     // микро-текстура: крупные пятна травы/камня + мелкий гранул, чтобы не было
     // плоской заливки цвета
     float blotch = 0.90f + 0.20f * (fbm2(xz * 1.6f + 89.1f, 2) - 0.5f);
@@ -429,8 +446,10 @@ vec3 applyFog(vec3 col, vec3 rd, vec3 sun, float nt, float dist) {
     vec3 fog = vec3(0.62f, 0.71f, 0.87f);
     fog += vec3(1.0f, 0.70f, 0.45f) * pow(sunHit, 5.0f) * 0.35f * nt;
     fog = mix(fog, vec3(1.0f, 0.55f, 0.35f), dusk * 0.70f);
-    float a = 1.0f - exp(-dist * 0.013f);
-    return mix(col, fog, clamp(a, 0.0f, 0.85f));
+    // Keep distant ridges visible. The former density washed most of the
+    // landscape into the sky colour at the 90-110 unit march distance.
+    float a = 1.0f - exp(-dist * 0.0055f);
+    return mix(col, fog, clamp(a, 0.0f, 0.58f));
 }
 
 //  цвет облаков: светлая масса, на закате — тёплая
@@ -470,32 +489,27 @@ vec3 renderTerrain(vec3 ro, vec3 rd) {
 
     vec3 hit = ro + rd * t;
     vec3 n = terrainNormal(hit.xz);
-    // низкая точка => возможны деревья: проверяем SDF ели
-    float dTree = treesDE(hit + n * 0.02f);
-    if (dTree < 0.05f) {
-        // ель: оттенок и пятна хвои зависят от места, чтобы лес не был плоским
-        float shade = clamp(dot(vec3(0.0f, 1.0f, 0.0f), sun), 0.0f, 1.0f);
-        vec2 cl = floor(hit.xz);
-        vec3 crown = mix(vec3(0.05f, 0.14f, 0.04f), vec3(0.11f, 0.24f, 0.07f),
-                         hash12(cl + 19.7f));
-        float mottle = 0.78f + 0.40f * fbm2(hit.xz * 9.0f + cl * 3.0f, 1);
-        return grade(crown * (0.35f + 0.65f * shade) * mottle);
+    float treeHit = treesDE(hit);
+    if (treeHit < 0.035f) {
+        vec3 treeNormal = normalize(vec3(
+            treesDE(hit + vec3(0.015f, 0.0f, 0.0f)) - treeHit,
+            treesDE(hit + vec3(0.0f, 0.015f, 0.0f)) - treeHit,
+            treesDE(hit + vec3(0.0f, 0.0f, 0.015f)) - treeHit));
+        float treeLight = 0.30f + 0.70f * clamp(dot(treeNormal, sun), 0.0f, 1.0f);
+        float trunkMask = step(0.23f, fract(hit.y * 2.0f));
+        vec3 foliage = mix(vec3(0.12f, 0.07f, 0.025f),
+                           vec3(0.035f, 0.20f, 0.055f), trunkMask);
+        return grade(foliage * treeLight);
     }
-    if (dTree < 0.6f) {
-        // ствол/край кроны
-        return grade(mix(vec3(0.05f, 0.10f, 0.04f), vec3(0.16f, 0.13f, 0.08f),
-                         smoothstep(0.0f, 0.6f, dTree)));
-    }
-
     float diff = clamp(dot(n, sun), 0.0f, 1.0f);
     float sh = terrainShadow(hit + n * 0.05f, sun);
     float ambient = 0.16f + 0.12f * clamp(n.y, 0.0f, 1.0f);
     float sky = 0.25f + 0.45f * clamp(n.y, 0.0f, 1.0f);
     float slope = 1.0f - clamp(n.y, 0.0f, 1.0f);
     vec3 base = terrainColor(hit.xz, hit.y, slope, t);
-    vec3 light = base * (ambient + (diff + 0.35f * sky) * sh);
+    vec3 light = base * (ambient + (diff + 0.50f * sky) * sh);
     // глубинная отдача: крутые ложбины получают меньше неба -> тёмные
-    light *= clamp(0.70f + 0.30f * n.y, 0.0f, 1.0f);
+    light *= clamp(0.86f + 0.14f * n.y, 0.0f, 1.0f);
     light = applyFog(light, rd, sun, nt, t);
     return grade(light);
 }
@@ -548,15 +562,24 @@ vec2 coastField(vec2 xz) {
 
     //  плавный счётчик итераций: на границе si -> uIterations, в открытом море — мал
     float si = float(it) + 1.0f - log2(log2(mz) / log2(uBailout));
-    float land = smoothstep(float(uIterations - 4), float(uIterations), si);
+    //  широкая зона перехода (было 4 итерации): берег получает наклон и
+    //  «полку», а не мгновенный обрыв в y = 0
+    float land = smoothstep(float(uIterations - 18), float(uIterations), si);
     return vec2(land, dW);
 }
 
-//  высота суши: холмы внутри множества, спадающие к берегу
+//  высота суши: холмы внутри множества, спадающие к берегу.
+//  Вдоль границы (dW -> 0) добавляется береговая «полка» — читаемый периметр
+//  высоты прямо у воды, иначе побережье выглядело бы плоской кромкой.
 float coastHeight(vec2 xz) {
-    float land = coastField(xz).x;
+    vec2 f = coastField(xz);
+    float land = f.x;
+    float dW = f.y;
     float hills = 0.30f + 0.70f * fbm2(xz * 0.13f + 17.3f, 3);
-    return land * uTerrainAmplitude * hills;
+    float shore = exp(-max(dW, 0.0f) * 1.4f);
+    float berm = mix(0.02f, 0.18f, shore);
+    float profile = mix(berm, 1.0f, smoothstep(0.05f, 0.55f, land));
+    return uTerrainAmplitude * hills * profile;
 }
 
 //  волны на воде (мелкая модуляция поверхности, не пересекается с сушей)
@@ -576,17 +599,28 @@ float coastSurface(vec2 xz) {
 }
 
 float mapCoast(vec3 p) {
-    return min(p.y - coastHeight(p.xz), p.y);   // суша сверху, вода на y=0
+    return min(p.y - coastHeight(p.xz), p.y - waveHeight(p.xz));
 }
 
 float marchCoast(vec3 ro, vec3 rd, float maxDist) {
     float t = 0.0f;
+    float previousT = 0.0f;
     const float stepMin = 0.06f;
     int steps = max(uMaxSteps, 30);
     for (int i = 0; i < steps; ++i) {
         vec3 p = ro + rd * t;
         float d = mapCoast(p);
-        if (d < 0.0f) return t;
+        if (d < 0.0f) {
+            float lo = previousT;
+            float hi = t;
+            for (int j = 0; j < 6; ++j) {
+                float mid = 0.5f * (lo + hi);
+                if (mapCoast(ro + rd * mid) < 0.0f) hi = mid;
+                else lo = mid;
+            }
+            return 0.5f * (lo + hi);
+        }
+        previousT = t;
         t += clamp(d, stepMin, 2.5f);
         if (t > maxDist) break;
     }
@@ -636,8 +670,11 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
     vec3 n = coastSurfNormal(hit.xz);
     vec2 cf = coastField(hit.xz);
     float land = cf.x;
+    float shoreGlow = exp(-max(cf.y, 0.0f) * 1.4f);
 
-    if (land > 0.5f) {
+    //  береговая «полка» у границы рассматривается как суша даже там, где
+    //  внутренность множества ещё не набрала близкую к 1 долю суши
+    if (land > 0.12f || shoreGlow > 0.30f) {
         // --- суша: песчаный пляж у воды -> зелень -> скалы на вершинах
         float diff = clamp(dot(n, sun), 0.0f, 1.0f);
         float sh = coastShadow(hit + n * 0.05f, sun);
@@ -645,32 +682,45 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
         float ambient = 0.20f + 0.14f * clamp(n.y, 0.0f, 1.0f);
         float slope = 1.0f - clamp(n.y, 0.0f, 1.0f);
         float hn = hit.y / max(uTerrainAmplitude, 0.01f);
+        vec3 wetSand = vec3(0.48f, 0.39f, 0.23f);
         vec3 sand = vec3(0.76f, 0.68f, 0.45f);
-        vec3 green = vec3(0.21f, 0.35f, 0.12f);
-        vec3 rock = vec3(0.30f, 0.27f, 0.24f);
-        vec3 base = mix(sand, green, smoothstep(0.08f, 0.30f, hn) * (1.0f - slope * 0.6f));
-        base = mix(base, rock, smoothstep(0.55f, 0.75f, hn));
+        vec3 green = vec3(0.18f, 0.37f, 0.14f);
+        vec3 rock = vec3(0.31f, 0.30f, 0.29f);
+        //  песчаная дюна держится ближе всего к линии берега и поднимается
+        //  вместе с береговой полкой; дальше от воды — трава и камни
+        float nearShore = exp(-max(cf.y, 0.0f) * 2.2f);
+        float shoreBand = mix(smoothstep(0.0f, 0.10f, hn),
+                              smoothstep(0.0f, 0.24f, hn), nearShore);
+        vec3 base = mix(wetSand, sand, shoreBand);
+        float vegetation = smoothstep(0.13f, 0.42f, hn) *
+                           (1.0f - smoothstep(0.34f, 0.68f, slope));
+        vegetation *= 0.80f - 0.55f * nearShore;
+        vegetation *= 0.75f + 0.35f * fbm2(hit.xz * 0.65f + 23.4f, 2);
+        base = mix(base, green, vegetation);
+        float rockMask = smoothstep(0.48f, 0.76f, slope + hn * 0.28f -
+                                    (fbm2(hit.xz * 0.70f + 4.2f, 2) - 0.5f) * 0.12f);
+        base = mix(base, rock, rockMask);
         // та же микро-текстура, что и в пейзаже
         float blotch = 0.90f + 0.20f * (fbm2(hit.xz * 1.6f + 89.1f, 2) - 0.5f);
         float grain = 0.92f + 0.16f * (fbm2(hit.xz * 7.3f + 13.7f, 1) - 0.5f);
         base *= blotch * grain;
         base *= mix(0.40f, 1.0f, nt);
-        col = base * (ambient + (diff + 0.35f * sky) * sh);
+        col = base * (ambient + (diff + 0.50f * sky) * sh);
         col = applyFog(col, rd, sun, nt, t);
         return gradeCoast(col);
     } else {
         // --- вода: глубокое море -> бирюзовое мелководье у берега
         float dw = cf.y;
-        float shore = exp(-max(dw, 0.0f) * 5.0f);
-        vec3 deep = vec3(0.04f, 0.16f, 0.28f);
-        vec3 shallow = vec3(0.14f, 0.55f, 0.48f);
+        float shore = exp(-max(dw, 0.0f) * 3.2f);
+        vec3 deep = vec3(0.025f, 0.12f, 0.25f);
+        vec3 shallow = vec3(0.10f, 0.50f, 0.46f);
         vec3 w = mix(deep, shallow, shore);
         w *= (0.55f + 0.55f * nt);
         // френель-отражение неба (с облаками) + блик солнца
         float v = clamp(dot(n, -rd), 0.0f, 1.0f);
         float fres = pow(1.0f - v, 3.0f);
         float spec = clamp(dot(reflect(-sun, n), -rd), 0.0f, 1.0f);
-        col = mix(w, col, fres * 0.85f);
+        col = mix(w, col, fres * 0.62f);
         col += vec3(1.0f, 0.95f, 0.8f) * pow(spec, 90.0f) * 0.8f * nt;
         // солнечная дорожка (мерцающие искры на волнах)
         col += vec3(1.0f, 0.90f, 0.75f) * pow(spec, 6.0f) * 0.10f * nt *

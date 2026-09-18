@@ -1,7 +1,7 @@
 # Verification
 
 The headless configuration is intended for machines without an OpenGL SDK or
-display server. It builds the CPU libraries, compression test, and their
+display server. It builds the CPU libraries, the core test, and their
 FetchContent dependencies without declaring or downloading GLAD, GLFW, GLM, or
 ImGui:
 

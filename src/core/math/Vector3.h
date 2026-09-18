@@ -50,10 +50,6 @@ public:
     Vector3 componentMin(const Vector3& o) const {
         return {std::min(x, o.x), std::min(y, o.y), std::min(z, o.z)};
     }
-
-private:
-    static double max(double a, double b) { return a > b ? a : b; }
-    static double min(double a, double b) { return a < b ? a : b; }
 };
 
 } // namespace ars::core::math

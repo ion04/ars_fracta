@@ -18,7 +18,7 @@ constexpr float kPanelWidth = 340.0f;
 constexpr float kStatusBarHeight = 26.0f;
 
 /**
- * @brief Панель управления параметрами фрактала + секция сжатия.
+ * @brief Панель управления параметрами фрактала и экспортом меша.
  */
 class ControlPanel {
 public:
@@ -27,14 +27,11 @@ public:
 
     void draw();
 
-    const std::string& lastCompressionInfo() const { return compressionInfo_; }
-
 private:
     void drawFractalSection();
-    void drawCompressionSection();
-    void compressCurrentView();
-    void pollCompressionJob();
+    void drawExportSection();
     void exportMengerMesh();
+    void pollExportJob();
     void loadPresetsIntoList();
 
     core::fractal::FractalParams* params_ = nullptr;
@@ -50,12 +47,12 @@ private:
     int presetIndex_ = -1;
     bool presetsLoaded_ = false;
 
-    // результат последнего сжатия
-    bool compressionDone_ = false;
-    std::string compressionInfo_;
-    struct CompressionResult;
-    std::shared_ptr<CompressionResult> compressionResult_;
-    core::async::Job compressionJob_;
+    // результат последнего экспорта меша
+    bool exportDone_ = false;
+    std::string exportInfo_;
+    struct MeshExportResult;
+    std::shared_ptr<MeshExportResult> exportResult_;
+    core::async::Job exportJob_;
     int meshIterations_ = 2;
 };
 

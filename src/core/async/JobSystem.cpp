@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <exception>
 #include <mutex>
+#include <stdexcept>
 #include <utility>
 
 namespace ars::core::async {
@@ -14,6 +15,7 @@ struct Job::State {
     std::exception_ptr error;
     std::mutex errorMutex;
     std::thread worker;
+    std::thread::id workerId{};
 };
 
 Job::~Job() {
@@ -47,6 +49,11 @@ bool Job::cancelled() const noexcept {
 
 void Job::wait() {
     if (!state_) return;
+    if (std::this_thread::get_id() == state_->workerId) {
+        // Задача не должна ждать саму себя: join текущего потока завис бы навсегда.
+        // Вместо зависания — явная ошибка, которую можно перехватить и залогировать.
+        throw std::logic_error("Job::wait() called from its own worker thread");
+    }
     if (state_->worker.joinable()) state_->worker.join();
     std::lock_guard<std::mutex> lock(state_->errorMutex);
     if (state_->error) std::rethrow_exception(state_->error);
@@ -64,6 +71,7 @@ Job JobSystem::submit(Task task) {
         }
         state->finished.store(true, std::memory_order_release);
     });
+    state->workerId = state->worker.get_id();
     return Job(std::move(state));
 }
 

@@ -1,6 +1,6 @@
 # ars_fracta
 
-Курсовая работа: **визуализация фракталов (OpenGL) и фрактальное сжатие изображений** на C++17.
+Курсовая работа: **визуализация фракталов (OpenGL)** на C++17.
 
 ## Возможности
 
@@ -9,13 +9,12 @@
   - Mandelbulb 3D
   - Menger Sponge (губка Менгера)
   - Julia 3D
-- Фрактальное сжатие изображений (IFS-кодирование по Жакину): энкодер, декодер, метрики MSE / PSNR / коэффициент сжатия.
-- Отменяемая асинхронная генерация и компрессия в CPU worker без блокировки GUI.
+- Отменяемая асинхронная генерация в CPU worker без блокировки GUI.
 - Построение внешней поверхности губки Менгера и экспорт в Wavefront OBJ и binary STL.
 - GUI на Dear ImGui: панель параметров, пресеты (JSON), статусная строка.
 - Загрузка/сохранение PNG (stb_image), конфигурация приложения (nlohmann/json).
 
-Экспорт губки Менгера доступен в панели «Фрактальное сжатие». Глубина
+Экспорт губки Менгера доступен в панели «Экспорт». Глубина
 итераций выбирается отдельно в диапазоне 0..4. Построение выполняется в worker;
 отмена проверяется при построении, финальная запись файлов не прерывается.
 Файл OBJ содержит независимые треугольники с внешним порядком обхода;
@@ -54,8 +53,9 @@ cmake --build build-coverage --target coverage
 Покрытие относится к CPU-модулям, которые запускаются тестовым стендом; GUI/OpenGL
 и shader-only генерация в процент CPU-покрытия не включаются.
 
-Тест `test_compression` строит изображение множества Мандельброта, выполняет цикл
-«сжатие → восстановление» и проверяет качество (PSNR) и коэффициент сжатия.
+Тест `test_core` покрывает математику фракталов (Complex, Vector3, DE),
+фоновые CPU-задачи с отменой и переносом исключений, а также экспорт
+губки Менгера в OBJ/STL.
 
 ## Структура проекта
 
@@ -67,15 +67,14 @@ cmake --build build-coverage --target coverage
 ├── src/
 │   ├── main.cpp
 │   ├── core/
-│   │   ├── math/               # Complex, Vector3, Matrix4
+│   │   ├── math/               # Complex, Vector3
 │   │   ├── async/              # CancellationToken и joinable CPU Job
 │   │   ├── export/             # OBJ и binary STL
 │   │   └── fractal/            # CPU/GLSL-фракталы и MengerMesh
 │   ├── render/                 # Window, Shader, Camera, Renderer (OpenGL)
-│   ├── compression/            # Encoder, Decoder, Metrics
 │   ├── gui/                    # MainWindow, ControlPanel, Viewport (ImGui)
 │   └── utils/                  # ImageLoader, Config, Logger
-└── tests/                      # test_compression.cpp
+└── tests/                      # test_core.cpp
 ```
 
 ## Управление (в видовом окне)

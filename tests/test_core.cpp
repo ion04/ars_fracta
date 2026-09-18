@@ -12,20 +12,17 @@
 #include <string>
 #include <thread>
 
-#include "compression/Decoder.h"
-#include "compression/Encoder.h"
-#include "compression/Metrics.h"
-#include "core/fractal/Mandelbulb3D.h"
-#include "core/fractal/Mandelbrot2D.h"
-#include "core/fractal/MengerSponge.h"
-#include "core/fractal/Julia3D.h"
-#include "core/fractal/Fractal.h"
-#include "core/math/Complex.h"
-#include "core/math/Vector3.h"
 #include "core/async/JobSystem.h"
 #include "core/export/MeshExporter.h"
+#include "core/fractal/Fractal.h"
+#include "core/fractal/Julia3D.h"
+#include "core/fractal/Mandelbulb3D.h"
+#include "core/fractal/Mandelbrot2D.h"
 #include "core/fractal/MengerMesh.h"
-#include "utils/ImageLoader.h"
+#include "core/fractal/MengerSponge.h"
+#include "core/fractal/SphericalDistance.h"
+#include "core/math/Complex.h"
+#include "core/math/Vector3.h"
 
 using namespace ars;
 
@@ -42,30 +39,8 @@ void check(bool ok, const std::string& what) {
 }
 } // namespace
 
-/// Построить синтетическое тестовое изображение — множество Мандельброта (CPU).
-static utils::Image makeMandelbrotImage(int size) {
-    utils::Image img;
-    img.width = size;
-    img.height = size;
-    img.channels = 1;
-    img.data.resize(static_cast<std::size_t>(size) * size);
-
-    const int maxIter = 128;
-    for (int y = 0; y < size; ++y) {
-        for (int x = 0; x < size; ++x) {
-            const double u = (static_cast<double>(x) + 0.5) / size * 3.0 - 2.25;
-            const double v = (static_cast<double>(y) + 0.5) / size * 2.4 - 1.2;
-            const core::math::Complex c(u, v);
-            const int it = core::fractal::Mandelbrot2D::escapeTime(c, maxIter);
-            img.data[static_cast<std::size_t>(y) * size + x] =
-                static_cast<std::uint8_t>((it * 255) / maxIter);
-        }
-    }
-    return img;
-}
-
 int main() {
-    std::cout << "=== ars_fracta: test_compression ===\n\n";
+    std::cout << "=== ars_fracta: test_core ===\n\n";
 
     // --- Complex ---
     {
@@ -161,6 +136,21 @@ int main() {
                       julia.params().iterations)),
               "Julia3D генерирует конечную оценку расстояния");
 
+        // --- sanitizeParams: единая точка валидации по типу ---
+        {
+            FractalParams dirty;
+            dirty.type = FractalType::Mandelbrot2D;
+            dirty.iterations = 4;   // ниже допустимого минимума
+            const FractalParams clean = core::fractal::sanitizeParams(dirty);
+            check(clean.type == FractalType::Mandelbrot2D && clean.iterations >= 16,
+                  "sanitizeParams(Mandelbrot2D) корректирует параметры");
+
+            FractalParams terrain;
+            terrain.type = FractalType::Terrain3D;
+            check(core::fractal::sanitizeParams(terrain).type == FractalType::Terrain3D,
+                  "sanitizeParams(Terrain3D) не трогает shader-тип");
+        }
+
         std::ifstream shader("assets/shaders/fractal.frag");
         const std::string shaderText((std::istreambuf_iterator<char>(shader)),
                                      std::istreambuf_iterator<char>());
@@ -227,6 +217,31 @@ int main() {
         check(!job.cancelled(), "Empty Job has no cancellation state");
     }
 
+    // --- Барьер дедлока: wait() из самого worker'а бросает logic_error ---
+    {
+        using core::async::Job;
+        std::atomic<Job*> selfHandle{nullptr};
+        std::atomic_bool guardTriggered{false};
+        auto job = core::async::JobSystem::submit(
+            [&selfHandle, &guardTriggered](const auto&) {
+                const auto deadline = std::chrono::steady_clock::now() +
+                                      std::chrono::milliseconds(500);
+                while (selfHandle.load(std::memory_order_acquire) == nullptr &&
+                       std::chrono::steady_clock::now() < deadline)
+                    std::this_thread::yield();
+                if (selfHandle.load(std::memory_order_acquire) == nullptr) return;
+                try {
+                    selfHandle.load(std::memory_order_acquire)->wait();
+                } catch (const std::logic_error&) {
+                    guardTriggered.store(true, std::memory_order_release);
+                }
+            });
+        selfHandle.store(&job, std::memory_order_release);
+        job.wait();
+        check(guardTriggered.load(std::memory_order_acquire),
+              "Job::wait() из worker'а бросает logic_error вместо зависания");
+    }
+
     // --- Mandelbulb DE ---
     {
         const double dZero =
@@ -235,6 +250,30 @@ int main() {
         const double dFar =
             core::fractal::Mandelbulb3D::distanceEstimate(core::math::Vector3(4, 0, 0), 8.0, 32);
         check(dFar > dZero + 0.5, "Mandelbulb DE: дальняя точка дальше от поверхности");
+    }
+
+    // --- Общий сферический DE: обёртки Мандельбульба/Жюлиа форвардят в helper ---
+    {
+        using core::math::Vector3;
+        const Vector3 starts[] = {Vector3(0, 0, 0), Vector3(0.1, 0.2, 0.3), Vector3(1, -2, 3)};
+        const double powers[] = {2.0, 8.0, 15.0};
+        const int iters[] = {8, 32, 64};
+        bool bulbMatches = true, juliaMatches = true;
+        for (const Vector3& p : starts) {
+            for (const double power : powers) {
+                for (const int n : iters) {
+                    bulbMatches = bulbMatches &&
+                        core::fractal::Mandelbulb3D::distanceEstimate(p, power, n) ==
+                        core::fractal::sphericalDistanceEstimate(p, p, power, n);
+                    const Vector3 c(0.5, -0.25, 0.1);
+                    juliaMatches = juliaMatches &&
+                        core::fractal::Julia3D::distanceEstimate(p, c, power, n) ==
+                        core::fractal::sphericalDistanceEstimate(p, c, power, n);
+                }
+            }
+        }
+        check(bulbMatches, "Mandelbulb3D DE == sphericalDistanceEstimate(p, p)");
+        check(juliaMatches, "Julia3D DE == sphericalDistanceEstimate(p, c)");
     }
 
     // --- Экспорт поверхности губки Менгера в OBJ и binary STL ---
@@ -303,71 +342,6 @@ int main() {
 
         std::remove(objPath.c_str());
         std::remove(stlPath.c_str());
-    }
-
-    // --- Фрактальное сжатие: цикл encode -> decode ---
-    {
-        const int size = 128;
-        const utils::Image src = makeMandelbrotImage(size);
-
-        compression::Encoder enc;
-        const auto encoded = enc.encode(src, 8, 2);
-        check(encoded.width == size && !encoded.codes.empty(),
-              "Encoder::encode вернул валидный код");
-
-        const auto decoded = compression::Decoder::decode(encoded, 8);
-        check(decoded.width == size && decoded.height == size,
-              "Decoder::decode вернул изображение нужного размера");
-
-        const double mse = compression::computeMSE(src, decoded);
-        const double psnr = compression::computePSNR(mse);
-        const double ratio =
-            compression::compressionRatio(src.data.size(), encoded.byteSize());
-
-        std::cout << "        MSE = " << std::setprecision(2) << mse
-                  << ", PSNR = " << psnr << " dB"
-                  << ", ratio = " << ratio << ":1\n";
-        check(psnr > 18.0, "PSNR > 18 дБ (восстановление приемлемого качества)");
-        check(ratio > 1.0, "Есть компрессия: ratio > 1");
-
-        int cancellationPolls = 0;
-        const auto cancelled = enc.encode(src, 8, 2, [&cancellationPolls] {
-            return ++cancellationPolls >= 2;
-        });
-        check(cancelled.codes.empty() && cancellationPolls >= 2,
-              "Encoder кооперативно прерывает длительный поиск доменов");
-    }
-
-    // --- Сериализация кода в файл и обратно ---
-    {
-        const utils::Image src = makeMandelbrotImage(64);
-        compression::Encoder enc;
-        const auto encoded = enc.encode(src, 8, 2);
-        check(encoded.codes.size() == 64, "64 range-блока для 64x64 / 8x8");
-
-        const std::string path = "test_compression_output.frax";
-        check(encoded.writeFile(path), "writeFile()");
-
-        compression::Encoder::EncodedImage loaded;
-        check(compression::Encoder::EncodedImage::readFile(path, loaded), "readFile()");
-        check(loaded.codes.size() == encoded.codes.size(),
-              "Round-trip: количество кодов совпадает");
-
-        if (loaded.codes.size() == encoded.codes.size()) {
-            bool same = true;
-            for (std::size_t i = 0; i < encoded.codes.size(); ++i) {
-                const auto& a = encoded.codes[i];
-                const auto& b = loaded.codes[i];
-                if (a.rangeX != b.rangeX || a.domainX != b.domainX ||
-                    a.isometry != b.isometry || a.scale != b.scale ||
-                    a.offset != b.offset) {
-                    same = false;
-                    break;
-                }
-            }
-            check(same, "Round-trip: все поля кодов совпадают");
-        }
-        std::remove(path.c_str());
     }
 
     std::cout << "\n=== Итог: " << failures << " ошибок ===\n";

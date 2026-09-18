@@ -1,14 +1,9 @@
 #include "gui/ControlPanel.h"
 
-#include "compression/Decoder.h"
-#include "compression/Encoder.h"
-#include "compression/Metrics.h"
 #include "core/export/MeshExporter.h"
-#include "core/fractal/Mandelbrot2D.h"
 #include "core/fractal/MengerMesh.h"
 #include "render/Camera.h"
 #include "utils/Config.h"
-#include "utils/ImageLoader.h"
 
 #include <imgui.h>
 
@@ -18,22 +13,20 @@
 #include <exception>
 #include <filesystem>
 #include <memory>
-#include <sstream>
 #include <string>
 
 namespace fs = std::filesystem;
 
 namespace ars::gui {
 
-struct ControlPanel::CompressionResult {
+struct ControlPanel::MeshExportResult {
     bool cancelled = false;
     std::string info;
 };
 
 using core::fractal::FractalParams;
 using core::fractal::FractalType;
-using core::math::Complex;
-using core::fractal::Mandelbrot2D;
+using core::fractal::sanitizeParams;
 using utils::Config;
 
 static const char* kTypeNames[] = {
@@ -45,21 +38,20 @@ static const char* kTypeNames[] = {
 // поверхности сразу возвращает t=0). Взгляд сохраняет неизменный наклон.
 static void placeTerrainCamera(render::Camera& cam,
                                const core::fractal::FractalParams& p) {
-    const float eyeY = std::max(3.5f, p.terrainAmplitude * 1.1f);
-    const glm::vec3 eye(10.0f, eyeY, -14.0f);
-    cam.setView(eye, eye + glm::vec3(-10.0f, -2.0f, 14.0f));
-    cam.setFov(55.0f);
+    const float eyeY = std::max(7.0f, p.terrainAmplitude * 1.45f);
+    const glm::vec3 eye(10.0f, eyeY, -20.0f);
+    cam.setView(eye, glm::vec3(-1.5f, 2.2f, 10.0f));
+    cam.setFov(52.0f);
 }
 
 // Камера над морем: побережье видно под наклоном, горизонт — вода.
 static void placeCoastCamera(render::Camera& cam,
                              const core::fractal::FractalParams& p) {
-    // комплексная плоскость: world = (c - uCoastCenter) * 0.15 / max(m2dZoom, 0.01)
-    const float scale = 0.15f / std::max(p.m2dZoom, 0.01f);
-    const glm::vec3 target(p.coastCenterRe / scale * 0.6f, 0.8f,
-                           p.coastCenterIm / scale * 0.6f);
-    cam.setView(target + glm::vec3(0.0f, 9.0f, -18.0f), target);
-    cam.setFov(55.0f);
+    // coastC(0, 0) == uCoastCenter, so the coastline focus stays at the world origin.
+    const float eyeY = std::max(9.0f, p.terrainAmplitude * 1.55f);
+    const glm::vec3 target(0.0f, 1.0f, 7.0f);
+    cam.setView(glm::vec3(0.0f, eyeY, -22.0f), target);
+    cam.setFov(52.0f);
 }
 
 ControlPanel::ControlPanel(core::fractal::FractalParams& params,
@@ -107,7 +99,7 @@ void ControlPanel::draw() {
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
     drawFractalSection();
     ImGui::Separator();
-    drawCompressionSection();
+    drawExportSection();
     ImGui::End();
 }
 
@@ -146,10 +138,18 @@ void ControlPanel::drawFractalSection() {
     } else if (p.type == FractalType::Coast3D) {
         ImGui::SliderInt("Итерации берега", &p.iterations, 16, 512);
         // берег = граница Мандельброта: центр выбирается в параметре ниже
+        const float previousCenterRe = p.coastCenterRe;
+        const float previousCenterIm = p.coastCenterIm;
+        const float previousZoom = p.m2dZoom;
+        const float previousAmplitude = p.terrainAmplitude;
         ImGui::SliderFloat("Re центра", &p.coastCenterRe, -2.0f, 1.0f, "%.5f");
         ImGui::SliderFloat("Im центра", &p.coastCenterIm, -1.2f, 1.2f, "%.5f");
         ImGui::SliderFloat("Масштаб берега", &p.m2dZoom, 0.05f, 40.0f, "%.1f");
         ImGui::SliderFloat("Высота суши", &p.terrainAmplitude, 1.0f, 20.0f, "%.1f");
+        if (p.coastCenterRe != previousCenterRe || p.coastCenterIm != previousCenterIm ||
+            p.m2dZoom != previousZoom || p.terrainAmplitude != previousAmplitude) {
+            placeCoastCamera(*camera_, p);
+        }
         ImGui::SliderFloat("Облачность", &p.cloudDensity, 0.0f, 1.5f, "%.2f");
         ImGui::SliderFloat("Время суток", &p.timeOfDay, 0.0f, 1.0f, "%.2f");
     } else {
@@ -178,6 +178,12 @@ void ControlPanel::drawFractalSection() {
         ImGui::Checkbox("Автовращение", &p.autoRotate);
     }
 
+    // Любое изменение параметров проходит через валидацию по типу фрактала:
+    // слайдеры ImGui пишут в params_ напрямую, поэтому прогоняем итоговое
+    // значение через sanitizeParams() (идемпотентно — неподвижный кадр не
+    // порождает лишних перерисовок).
+    p = sanitizeParams(p);
+
     ImGui::Spacing();
     if (renderScale_) {
         ImGui::SliderFloat("Разрешение рендера", renderScale_, 0.25f, 1.0f, "%.2f");
@@ -196,6 +202,7 @@ void ControlPanel::drawFractalSection() {
                     const std::string path = std::string(ARS_FRACTA_ASSETS_DIR) +
                                              "/presets/" + presetFiles_[i];
                     if (Config::loadFractal(path, p)) {
+                        p = sanitizeParams(p);   // пресет из файла мог быть испорчен
                         typeIndex_ = static_cast<int>(p.type);
                         colorModeIdx_ = p.colorMode;
                         if (p.type == FractalType::Terrain3D) {
@@ -215,6 +222,7 @@ void ControlPanel::drawFractalSection() {
     if (ImGui::Button("Сохранить текущий пресет")) {
         const std::string path = std::string(ARS_FRACTA_ASSETS_DIR) +
                                  "/presets/custom.json";
+        p = sanitizeParams(p);   // в файл попадают только валидированные значения
         Config::saveFractal(path, p);
         presetsLoaded_ = false;
         loadPresetsIntoList();
@@ -222,131 +230,37 @@ void ControlPanel::drawFractalSection() {
 }
 
 // ---------------------------------------------------------------------------
-//  Сжатие
+//  Экспорт
 // ---------------------------------------------------------------------------
 
-void ControlPanel::drawCompressionSection() {
-    pollCompressionJob();
-    ImGui::Text("Фрактальное сжатие");
-    const bool running = static_cast<bool>(compressionResult_);
-    if (running) ImGui::BeginDisabled();
-    if (ImGui::Button("Сжать вид (Mandelbrot 2D, 256x256)")) {
-        compressCurrentView();
-    }
-    if (running) ImGui::EndDisabled();
-    if (running) {
-        ImGui::SameLine();
-        if (ImGui::Button("Отмена")) compressionJob_.cancel();
-        ImGui::TextUnformatted("Выполняется в фоне...");
-    }
-    if (compressionDone_) {
-        ImGui::Spacing();
-        ImGui::TextWrapped("%s", compressionInfo_.c_str());
-    }
+void ControlPanel::drawExportSection() {
+    pollExportJob();
+    ImGui::Text("Экспорт");
     ImGui::SliderInt("Глубина mesh Менгера", &meshIterations_, 0, 4);
-    ImGui::BeginDisabled(static_cast<bool>(compressionResult_));
+    const bool running = static_cast<bool>(exportResult_);
+    ImGui::BeginDisabled(running);
     if (ImGui::Button("Экспортировать губку Менгера (OBJ + STL)")) {
         exportMengerMesh();
     }
     ImGui::EndDisabled();
-}
-
-void ControlPanel::compressCurrentView() {
-    const int size = 256;
-    const int maxIter = std::max(16, params_->iterations);
-
-    // центр и масштаб берутся из положения камеры (2D: cam.xy = центр, m2dZoom)
-    const double cx = static_cast<double>(camera_->position().x);
-    const double cy = static_cast<double>(camera_->position().y);
-    const double zoom = std::max(0.05, static_cast<double>(params_->m2dZoom));
-    const double scale = 3.5 / zoom;
-
-    compressionDone_ = false;
-    compressionInfo_.clear();
-    compressionResult_ = std::make_shared<CompressionResult>();
-    const auto result = compressionResult_;
-    compressionJob_ = core::async::JobSystem::submit(
-        [result, size, maxIter, cx, cy, scale](const auto& token) {
-            utils::Image img;
-            img.width = size;
-            img.height = size;
-            img.channels = 1;
-            img.data.resize(static_cast<std::size_t>(size) * size);
-            for (int y = 0; y < size; ++y) {
-                if (token.isCancelled()) {
-                    result->cancelled = true;
-                    return;
-                }
-                for (int x = 0; x < size; ++x) {
-                    const double u = (static_cast<double>(x) + 0.5) / size - 0.5;
-                    const double v = (static_cast<double>(y) + 0.5) / size - 0.5;
-                    const Complex c(cx + u * scale, cy + v * scale);
-                    const int it = Mandelbrot2D::escapeTime(c, maxIter);
-                    img.data[static_cast<std::size_t>(y) * size + x] =
-                        static_cast<std::uint8_t>((it * 255) / maxIter);
-                }
-            }
-
-            compression::Encoder encoder;
-            const auto encoded = encoder.encode(
-                img, 8, 2, [&token] { return token.isCancelled(); });
-            if (token.isCancelled()) {
-                result->cancelled = true;
-                return;
-            }
-            if (encoded.codes.empty()) {
-                result->info = "Ошибка: кодер не вернул результат";
-                return;
-            }
-
-            const auto decoded = compression::Decoder::decode(encoded, 8);
-            const double mse = compression::computeMSE(img, decoded);
-            const double psnr = compression::computePSNR(mse);
-            const double ratio = compression::compressionRatio(img.data.size(), encoded.byteSize());
-            if (token.isCancelled()) {
-                result->cancelled = true;
-                return;
-            }
-            const bool filesSaved = utils::ImageLoader::savePng("fractal_original.png", img) &&
-                                    utils::ImageLoader::savePng("fractal_decoded.png", decoded) &&
-                                    encoded.writeFile("fractal_compressed.frax");
-            std::ostringstream info;
-            info.precision(2);
-            info << std::fixed << "MSE: " << mse << "\nPSNR: " << psnr
-                 << " dB\nКоэффициент сжатия: " << ratio << ":1\n";
-            if (filesSaved) {
-                info << "Сохранено: fractal_original.png, fractal_decoded.png, "
-                        "fractal_compressed.frax";
-            } else {
-                info << "Ошибка записи одного или нескольких файлов";
-            }
-            result->info = info.str();
-        });
-}
-
-void ControlPanel::pollCompressionJob() {
-    if (!compressionResult_ || !compressionJob_.ready()) return;
-    try {
-        compressionJob_.wait();
-        compressionInfo_ = compressionResult_->cancelled ? "Операция отменена"
-                                                         : compressionResult_->info;
-        compressionDone_ = true;
-    } catch (const std::exception& error) {
-        compressionInfo_ = std::string("Ошибка фоновой задачи: ") + error.what();
-        compressionDone_ = true;
-    } catch (...) {
-        compressionInfo_ = "Неизвестная ошибка фоновой задачи";
-        compressionDone_ = true;
+    if (running) {
+        ImGui::SameLine();
+        if (ImGui::Button("Отмена")) exportJob_.cancel();
+        ImGui::TextUnformatted("Выполняется в фоне...");
     }
-    compressionResult_.reset();
+    if (exportDone_) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", exportInfo_.c_str());
+    }
 }
 
 void ControlPanel::exportMengerMesh() {
-    compressionDone_ = false;
-    compressionResult_ = std::make_shared<CompressionResult>();
-    const auto result = compressionResult_;
+    exportDone_ = false;
+    exportInfo_.clear();
+    exportResult_ = std::make_shared<MeshExportResult>();
+    const auto result = exportResult_;
     const int depth = meshIterations_;
-    compressionJob_ = core::async::JobSystem::submit([result, depth](const auto& token) {
+    exportJob_ = core::async::JobSystem::submit([result, depth](const auto& token) {
         const auto mesh = core::fractal::MengerMesh::build(
             depth, [&token] { return token.isCancelled(); });
         if (token.isCancelled()) {
@@ -361,6 +275,23 @@ void ControlPanel::exportMengerMesh() {
                   std::to_string(mesh.triangleCount()) + " треугольников)"
             : "Ошибка экспорта губки Менгера";
     });
+}
+
+void ControlPanel::pollExportJob() {
+    if (!exportResult_ || !exportJob_.ready()) return;
+    try {
+        exportJob_.wait();
+        exportInfo_ = exportResult_->cancelled ? "Операция отменена"
+                                               : exportResult_->info;
+        exportDone_ = true;
+    } catch (const std::exception& error) {
+        exportInfo_ = std::string("Ошибка фоновой задачи: ") + error.what();
+        exportDone_ = true;
+    } catch (...) {
+        exportInfo_ = "Неизвестная ошибка фоновой задачи";
+        exportDone_ = true;
+    }
+    exportResult_.reset();
 }
 
 } // namespace ars::gui

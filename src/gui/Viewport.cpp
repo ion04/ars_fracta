@@ -46,6 +46,8 @@ void Viewport::draw(float /*deltaTime*/) {
                 // в 2D зум управляется m2dZoom, а не дистанцией камеры
                 float z = params_->m2dZoom * std::pow(1.15f, io.MouseWheel);
                 params_->m2dZoom = std::max(0.01f, std::min(30.0f, z));
+                // зум пишется в params_ напрямую — пропускаем через валидацию
+                *params_ = core::fractal::sanitizeParams(*params_);
             } else {
                 renderer_->camera().zoom(io.MouseWheel * 0.07f);
             }

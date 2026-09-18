@@ -18,9 +18,6 @@ CMakeUserPresets.json
 
 # Generated runtime files
 config.json
-*.frax
-fractal_original.png
-fractal_decoded.png
 
 # OS noise
 Thumbs.db

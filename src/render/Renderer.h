@@ -4,6 +4,8 @@
 #include <glm/glm.hpp>
 
 #include <algorithm>
+#include <cstdint>
+#include <vector>
 
 #include "core/fractal/Fractal.h"
 #include "render/Camera.h"
@@ -30,6 +32,9 @@ public:
     /// вызова, кадр не пересчитывается (экономия GPU для статичной сцены).
     /// Возвращает true, если фрактал реально был отрисован в этом вызове.
     bool renderFrame(const core::fractal::FractalParams& params, float timeSec);
+
+    /// Read the rendered offscreen frame as top-to-bottom RGBA8 pixels.
+    bool captureFrame(std::vector<std::uint8_t>& pixels) const;
 
     /// Коэффициент масштаба внутреннего буфера (0.125..1.0). Меньше — быстрее.
     void setRenderScale(float scale) {
