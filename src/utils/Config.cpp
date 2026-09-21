@@ -56,6 +56,7 @@ json fractalToJson(const core::fractal::FractalParams& p) {
     j["cloudDensity"] = p.cloudDensity;
     j["treeDensity"] = p.treeDensity;
     j["timeOfDay"] = p.timeOfDay;
+    j["fogDensity"] = p.fogDensity;
     j["autoRotate"] = p.autoRotate;
     j["coastCenterRe"] = p.coastCenterRe;
     j["coastCenterIm"] = p.coastCenterIm;
@@ -81,6 +82,7 @@ core::fractal::FractalParams fractalFromJson(const json& j) {
     if (j.contains("cloudDensity"))     p.cloudDensity = j["cloudDensity"].get<float>();
     if (j.contains("treeDensity"))      p.treeDensity = j["treeDensity"].get<float>();
     if (j.contains("timeOfDay"))        p.timeOfDay = j["timeOfDay"].get<float>();
+    if (j.contains("fogDensity"))       p.fogDensity = j["fogDensity"].get<float>();
     if (j.contains("autoRotate"))  p.autoRotate = j["autoRotate"].get<bool>();
     if (j.contains("coastCenterRe")) p.coastCenterRe = j["coastCenterRe"].get<float>();
     if (j.contains("coastCenterIm")) p.coastCenterIm = j["coastCenterIm"].get<float>();

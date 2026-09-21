@@ -23,6 +23,7 @@
 #include "core/fractal/SphericalDistance.h"
 #include "core/math/Complex.h"
 #include "core/math/Vector3.h"
+#include "utils/Config.h"
 
 using namespace ars;
 
@@ -159,6 +160,30 @@ int main() {
                   shaderText.find("renderTerrain") != std::string::npos &&
                   shaderText.find("renderCoast") != std::string::npos,
               "Terrain3D и Coast3D имеют shader-путь генерации");
+        // красная зона: плотность тумана параметризована uniform'ом, а не литералом
+        check(shaderText.find("uniform float uFogDensity;") != std::string::npos &&
+                  shaderText.find("-dist * uFogDensity") != std::string::npos &&
+                  shaderText.find("0.0055f") == std::string::npos,
+              "Шейдер читает плотность тумана из uFogDensity (литерал 0.0055 удалён)");
+    }
+
+    // --- JSON round-trip FractalParams (красная зона FractalParams <-> JSON) ---
+    {
+        using core::fractal::FractalParams;
+        using core::fractal::FractalType;
+        check(FractalParams{}.fogDensity == 0.0055f,
+              "fogDensity по умолчанию == 0.0055 (как в шейдере до параметризации)");
+
+        FractalParams p;
+        p.type = FractalType::Terrain3D;
+        p.fogDensity = 0.0135f;
+        const std::string path = "test_fog_roundtrip.json";
+        check(utils::Config::saveFractal(path, p), "Config::saveFractal() записала файл");
+        FractalParams loaded;
+        check(utils::Config::loadFractal(path, loaded), "Config::loadFractal() прочитала файл");
+        check(loaded.fogDensity == 0.0135f && loaded == p,
+              "JSON round-trip: fogDensity сохранён, все поля равны");
+        std::remove(path.c_str());
     }
 
     // --- Асинхронные CPU-задачи: UI может опрашивать ready без ожидания ---

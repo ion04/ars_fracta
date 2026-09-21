@@ -33,6 +33,7 @@ uniform float uTerrainFrequency;  // масштаб шума
 uniform float uCloudDensity;      // плотность облаков
 uniform float uTreeDensity;       // плотность деревьев
 uniform float uTimeOfDay;         // 0..1: положение солнца над горизонтом
+uniform float uFogDensity;        // плотность тумана (воздушная перспектива)
 
 // параметры побережья (uFractalType == 5): центр плоскости Мандельброта,
 // где проходит линия берега
@@ -623,6 +624,33 @@ float sceneShadow(vec3 p, vec3 sunDir_) {
     return res;
 }
 
+//  Ambient occlusion (задача 2.2): короткий марш ВДОЛЬ нормали полным полем
+//  mapLandscape (рельеф + ели + валуны). Классическая оценка IQ
+//  (nvscene2008): на каждом шаге сравниваем ожидаемое расстояние h с фактическим
+//  значением DE; экранирующие поверхности (стенки расщелины, соседний валун,
+//  нижняя юбка ели над головой) дают d << h -> накопление occ с затухающим
+//  весом. 5 отсчётов вдоль одной нормали (0.06..1.17 — достаёт до нижней
+//  юбки кроны ~0.45..1.2 над землёй) вместо 32 по полусфере: в heightfield-
+//  сцене этого хватает для читаемых контактных теней. Бюджет: за 18 модулей
+//  camera-дистанции остаются только 3 первых отсчёта (эффект уже субпиксельный,
+//  а весь AO вдали гасится микшированием), ранний выход по occ докупает
+//  ещё ~30% экономии в тёмных зонах. Возврат 0..1 (1 = открытое небо).
+float terrainAO(vec3 pos, vec3 nor, float camDist) {
+    int taps = 5;
+    if (camDist > 18.0f) taps = 3;
+    float occ = 0.0f;
+    float sca = 1.0f;
+    for (int i = 0; i < 5; ++i) {
+        if (i >= taps) break;
+        float h = 0.06f + 0.2775f * float(i);        // 0.06..1.17 вдоль нормали
+        float d = mapLandscape(pos + nor * h);
+        occ += max(h - d, 0.0f) * sca;               // только экранирование (d < h)
+        sca *= 0.72f;
+        if (occ > 0.3f) break;                       // дальше AO всё равно в нуле
+    }
+    return clamp(1.0f - 3.0f * occ, 0.0f, 1.0f);
+}
+
 //  облачный слой: быстрое пересечение луча с плоскостью облаков
 float cloudAlpha(vec3 ro, vec3 rd, float hitT) {
     if (uCloudDensity <= 0.0f) return 0.0f;
@@ -662,9 +690,9 @@ vec3 applyFog(vec3 col, vec3 rd, vec3 sun, float nt, float dist) {
     vec3 fog = vec3(0.62f, 0.71f, 0.87f);
     fog += vec3(1.0f, 0.70f, 0.45f) * pow(sunHit, 5.0f) * 0.35f * nt;
     fog = mix(fog, vec3(1.0f, 0.55f, 0.35f), dusk * 0.70f);
-    // Keep distant ridges visible. The former density washed most of the
-    // landscape into the sky colour at the 90-110 unit march distance.
-    float a = 1.0f - exp(-dist * 0.0055f);
+    //  плотность тумана настраивается (uFogDensity); clamp по альфе держит
+    //  дальние хребты читаемыми: туман не вымывает их в цвет неба полностью
+    float a = 1.0f - exp(-dist * uFogDensity);
     return mix(col, fog, clamp(a, 0.0f, 0.58f));
 }
 
@@ -686,9 +714,53 @@ vec3 gradeCoast(vec3 c) {
     return mix(vec3(dot(c, vec3(0.299f, 0.587f, 0.114f))), c, 1.15f) * 1.10f;
 }
 
+// ---------------------------------------------------------------------------
+//  Освещение пейзажа (задача 2.2) — только свет, геометрию не трогаем:
+//  1) тёплый прямой свет / холодная ambient-подсветка неба (color grading):
+//     диффузная составляющая тонзируется цветом солнца (на закате —
+//     оранжевым), ambient и небесная подсветка — холодным синим.
+//     Освещённые склоны и тени оказываются в разных цветовых температурах
+//     -> объём читается.
+//  2) rim/backlight (контур): скольжение нормали к лучу (1-N·V)^k, включено
+//     когда солнце ЗА поверхностью (dot(sun,rd)>0) — светящийся контур хребтов,
+//     крон и валунов на фоне неба; для елей усиливает «просвет» хвои.
+//  3) specular влажных камней и снега: Blinn-Schlick (F0 диэлектрика 0.04 +
+//     0.96(1-V·H)^5), блик сужается на гладком льду снега и шире на камне.
+// ---------------------------------------------------------------------------
+
+//  цвет прямой солнечной составляющей: нейтрально-тёплый днём, оранжевый в dusk
+vec3 sunTintRGB(float dusk) {
+    return mix(vec3(1.10f, 0.98f, 0.86f), vec3(1.15f, 0.62f, 0.34f), dusk * 0.85f);
+}
+
+//  холодный ambient (заполняющий свет неба у земли)
+vec3 coolAmbient(float dusk) {
+    return mix(vec3(0.70f, 0.80f, 1.05f), vec3(0.62f, 0.66f, 0.92f), dusk * 0.70f);
+}
+
+//  небесная подсветка (sky term) — чуть голубее ambient, на закате теплее
+vec3 skyTintRGB(float dusk) {
+    return mix(vec3(0.55f, 0.70f, 1.05f), vec3(0.85f, 0.70f, 0.85f), dusk * 0.60f);
+}
+
+//  контровая подсветка: k — острота контура, boost — яркость хвои на просвет.
+//  Работает только в backlight-геометрии (солнце за поверхностью относительно
+//  камеры) и гасится в собственной тени объекта, но не до нуля: часть контура
+//  освещена небом.
+vec3 rimLight(vec3 n, vec3 rd, vec3 sun, float shadow, float k, float boost,
+              float dusk) {
+    float rim = pow(1.0f - clamp(dot(n, -rd), 0.0f, 1.0f), k) *
+                clamp(dot(sun, rd), 0.0f, 1.0f);
+    return sunTintRGB(dusk) * (rim * (0.35f + 0.65f * shadow) * (1.0f + boost));
+}
+
 vec3 renderTerrain(vec3 ro, vec3 rd) {
     vec3 sun = sunDir();
     float nt = daylightLevel();
+    float dusk = duskLevel();
+    vec3 sunTint = sunTintRGB(dusk) * nt;      // прямой свет гаснет вместе с nt
+    vec3 coolAmb = coolAmbient(dusk);
+    vec3 skyTint = skyTintRGB(dusk);
     int mat;                                  // 0=террейн, 1=дерево, 2=камень
     float t = marchLandscape(ro, rd, 90.0f, mat);
 
@@ -719,10 +791,28 @@ vec3 renderTerrain(vec3 ro, vec3 rd) {
                         vec3(0.50f, 0.47f, 0.43f), clamp(rt.x * 1.4f, 0.0f, 1.0f));
         rcol = mix(rcol, rcol * vec3(0.52f, 0.5f, 0.48f), rt.y * 0.8f);
         // вершины камней на высоте пылятся снегом, как у террейна
-        rcol = mix(rcol, vec3(0.82f, 0.87f, 0.93f),
-                   smoothstep(0.72f, 0.92f, hit.y / max(uTerrainAmplitude, 0.01f)) *
-                   smoothstep(0.55f, 0.85f, rn.y));
-        vec3 rlight = rcol * (ramp + (rdiff + 0.5f * rsky) * rsh);
+        float rSnow = smoothstep(0.72f, 0.92f, hit.y / max(uTerrainAmplitude, 0.01f)) *
+                      smoothstep(0.55f, 0.85f, rn.y);
+        rcol = mix(rcol, vec3(0.82f, 0.87f, 0.93f), rSnow);
+        //  освещение вала: ambient — холодный небесный, диффузный — тёплый
+        //  солнечный (см. шапку задачи 2.2); величина подобрана так, чтобы
+        //  дневная экспозиция совпадала со старой формулой rcol*(ramp+...)
+        vec3 rlight = rcol * ramp * coolAmb * mix(0.45f, 1.0f, nt) +
+                      rcol * (rdiff * sunTint + 0.5f * rsky * skyTint * nt) * rsh;
+        //  влажный камень: низкие валуны в долине блестят, снежная шапка —
+        //  ледяной узкой искрой; диэлектрический F0=0.04 + Schlick
+        vec3 rH = normalize(sun - rd);
+        float rVH = clamp(dot(-rd, rH), 0.0f, 1.0f);
+        float rFres = 0.04f + 0.96f * pow(1.0f - rVH, 5.0f);
+        float rWet = mix(1.0f - smoothstep(0.15f, 0.60f,
+                                           hit.y / max(uTerrainAmplitude, 0.01f)),
+                         0.60f, rSnow);
+        float rShin = mix(36.0f, 140.0f, rSnow);       // лёд глаже мокрого камня
+        rlight += sunTint * pow(clamp(dot(rn, rH), 0.0f, 1.0f), rShin) *
+                  rFres * rWet * (0.35f + 0.65f * rsh) * (0.55f + 0.45f * nt);
+        //  контур на просвет (rim)
+        rlight += rcol * rimLight(rn, rd, sun, rsh, 4.0f, 0.0f, dusk) *
+                  (0.55f * nt);
         rlight = applyFog(rlight, rd, sun, nt, t);
         return grade(rlight);
     }
@@ -773,10 +863,22 @@ vec3 renderTerrain(vec3 ro, vec3 rd) {
     float slope = 1.0f - clamp(n.y, 0.0f, 1.0f);
     float diff = clamp(dot(n, sun), 0.0f, 1.0f);
     float sh = sceneShadow(hit + n * 0.05f, sun);
+    //  AO (задача 2.2): затемнение в расщелинах, между валунами и под кронами.
+    //  Передний план (крупные ели/валуны) лежит на 15..27 модулях, поэтому
+    //  полное действие держим до 18, дальше плавно гасим к 28.
+    float ao = 1.0f;
+    if (t < 28.0f) {
+        ao = mix(1.0f, terrainAO(hit + n * 0.05f, n, t), smoothstep(28.0f, 18.0f, t));
+    }
     float ambient = 0.16f + 0.12f * clamp(n.y, 0.0f, 1.0f);
     float sky = 0.25f + 0.45f * clamp(n.y, 0.0f, 1.0f);
     vec3 base = terrainColor(hit, n, hit.y, slope, t);
-    vec3 light = base * (ambient + (diff + 0.50f * sky) * sh);
+    //  Непрямой свет (ambient и небесная подсветка) гасится AO полностью —
+    //  это физический смысл окклюзии; прямой солнечный — лишь наполовину
+    //  (солнце — направленный источник, и его экранирование уже считает sh).
+    //  На открытых участках ao == 1 и формула совпадает со старой.
+    float aoSun = mix(1.0f, ao, 0.45f);
+    vec3 light = base * (ambient * ao + (diff * aoSun + 0.50f * sky * ao) * sh);
     // глубинная отдача: крутые ложбины получают меньше неба -> тёмные
     light *= clamp(0.86f + 0.14f * n.y, 0.0f, 1.0f);
     light = applyFog(light, rd, sun, nt, t);
@@ -1056,11 +1158,32 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
                      (0.50f + 0.50f * smoothstep(0.22f, 0.55f, foamNoise));
         float foam = clamp(crestFoam * 0.85f + wash, 0.0f, 1.0f);
 
-        // френель-отражение неба (с облаками) + блик солнца
+        // Френель-Шлик (вода F0=0.02) + честное отражение неба по зеркальному
+        // направлению: солнечный диск и облака отражаются на склонах волн
+        // (дорожка сверкает), а не смазаны по направлению взгляда
         float v = clamp(dot(n, -rd), 0.0f, 1.0f);
-        float fres = pow(1.0f - v, 3.0f);
+        float x = 1.0f - v;
+        float x2 = x * x;
+        float fres = 0.02f + 0.98f * x2 * x2 * x;
         float spec = clamp(dot(reflect(-sun, n), -rd), 0.0f, 1.0f);
-        col = mix(w, col, fres * 0.62f);
+
+        vec3 rdir = reflect(rd, n);
+        rdir.y = abs(rdir.y);                      // отражение не уходит под горизонт
+        vec3 reflSky = skyGradient(rdir, sun, nt, vec3(0.49f, 0.68f, 0.85f),
+                                   vec3(0.22f, 0.44f, 0.80f));
+        reflSky = mix(reflSky, cloudShade(nt),
+                      cloudAlpha(hit + n * 0.05f, rdir, -1.0f));
+        col = mix(w, reflSky, fres);
+
+        //  подповерхностное рассеяние: солнце «просвечивает» гребни волн
+        //  насквозь полупрозрачным бирюзовым свечением при взгляде на солнце;
+        //  толщина слоя — фаза Герстнера (crest), у берега света больше
+        float sssB = clamp(dot(rd, sun) * 0.5f + 0.5f, 0.0f, 1.0f);
+        float sss = sssB * sssB * sssB * sssB *
+                    clamp(crest * 0.5f + 0.65f, 0.0f, 1.0f) * (0.35f + 0.65f * shore);
+        col += vec3(0.05f, 0.35f, 0.30f) * sss * nt * 0.55f;
+
+        //  прямой солнечный блик (острый) и дорожка (широкая, мерцает шумом)
         col += vec3(1.0f, 0.95f, 0.8f) * pow(spec, 90.0f) * 0.8f * nt;
         // солнечная дорожка (мерцающие искры на волнах)
         col += vec3(1.0f, 0.90f, 0.75f) * pow(spec, 6.0f) * 0.10f * nt *
@@ -1068,6 +1191,9 @@ vec3 renderCoast(vec3 ro, vec3 rd) {
         // пена лежит поверх отражений (светлое матовое рассеяние)
         vec3 foamCol = vec3(0.92f, 0.96f, 0.98f) * (0.40f + 0.75f * nt);
         col = mix(col, foamCol, clamp(foam * (0.70f + 0.30f * fres), 0.0f, 1.0f));
+        //  атмосферная дымка: дальнее море, как и суша, тонет в горизонте
+        //  (раньше водная ветка возвращалась без тумана — море было «плоским»)
+        col = applyFog(col, rd, sun, nt, t);
     }
     return gradeCoast(col);
 }

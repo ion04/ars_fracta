@@ -209,6 +209,7 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
     shader_.setFloat("uCloudDensity", params.cloudDensity);
     shader_.setFloat("uTreeDensity", params.treeDensity);
     shader_.setFloat("uTimeOfDay", params.timeOfDay);
+    shader_.setFloat("uFogDensity", params.fogDensity);
     shader_.setVec2("uCoastCenter",
                     glm::vec2(params.coastCenterRe, params.coastCenterIm));
 

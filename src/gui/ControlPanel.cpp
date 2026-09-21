@@ -1,4 +1,5 @@
 #include "gui/ControlPanel.h"
+#include "gui/Layout.h"
 
 #include "core/export/MeshExporter.h"
 #include "core/fractal/MengerMesh.h"
@@ -45,9 +46,9 @@ static void placeTerrainCamera(render::Camera& cam,
 }
 
 // Камера над морем: побережье видно под наклоном, горизонт — вода.
+// Центр побережья лежит в начале координат (coastCenter == (0, 0)).
 static void placeCoastCamera(render::Camera& cam,
                              const core::fractal::FractalParams& p) {
-    // coastC(0, 0) == uCoastCenter, so the coastline focus stays at the world origin.
     const float eyeY = std::max(9.0f, p.terrainAmplitude * 1.55f);
     const glm::vec3 target(0.0f, 1.0f, 7.0f);
     cam.setView(glm::vec3(0.0f, eyeY, -22.0f), target);
@@ -133,6 +134,7 @@ void ControlPanel::drawFractalSection() {
         }
         ImGui::SliderFloat("Масштаб шума", &p.terrainFrequency, 0.03f, 0.5f, "%.2f");
         ImGui::SliderFloat("Облачность", &p.cloudDensity, 0.0f, 1.5f, "%.2f");
+        ImGui::SliderFloat("Плотность тумана", &p.fogDensity, 0.001f, 0.02f, "%.4f");
         ImGui::SliderFloat("Плотность леса", &p.treeDensity, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Время суток", &p.timeOfDay, 0.0f, 1.0f, "%.2f");
     } else if (p.type == FractalType::Coast3D) {

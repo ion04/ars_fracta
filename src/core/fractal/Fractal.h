@@ -31,8 +31,8 @@ inline const char* toString(FractalType t) {
 /**
  * @brief Набор параметров фрактала, передаваемых в шейдер как uniform.
  *
- * Единая структура для всех четырёх фракталов: поля, не применимые к текущему
- * типу, просто игнорируются шейдером.
+ * Единая структура для всех фракталов: поля, не применимые к текущему типу,
+ * просто игнорируются шейдером.
  */
 struct FractalParams {
     FractalType type = FractalType::Mandelbulb3D;
@@ -52,6 +52,7 @@ struct FractalParams {
     float cloudDensity      = 0.6f; // плотность облаков (Terrain3D)
     float treeDensity       = 0.5f; // плотность деревьев (Terrain3D)
     float timeOfDay         = 0.35f; // положение солнца (0..1, Terrain3D)
+    float fogDensity        = 0.0055f; // плотность тумана (Terrain3D, UI; шейдерный applyFog)
     // центр плоскости Мандельброта, где находится «побережье» (Coast3D)
     float coastCenterRe     = -0.74536f;
     float coastCenterIm     = 0.11301f;
@@ -66,7 +67,7 @@ struct FractalParams {
                terrainAmplitude == o.terrainAmplitude &&
                terrainFrequency == o.terrainFrequency &&
                cloudDensity == o.cloudDensity && treeDensity == o.treeDensity &&
-               timeOfDay == o.timeOfDay &&
+               timeOfDay == o.timeOfDay && fogDensity == o.fogDensity &&
                coastCenterRe == o.coastCenterRe && coastCenterIm == o.coastCenterIm;
     }
     bool operator!=(const FractalParams& o) const { return !(*this == o); }
@@ -76,14 +77,12 @@ struct FractalParams {
  * @brief Абстрактный базовый класс фрактала.
  *
  * Класс, помимо общих параметров, предоставляет CPU-реализации итераций /
- * distance estimation для каждого фрактала (используются в метриках и тестах).
+ * distance estimation для каждого фрактала (используются в тестах).
  */
 class Fractal {
 public:
     virtual ~Fractal() = default;
 
-    virtual const char* name() const noexcept = 0;
-    virtual bool is3D() const noexcept = 0;
     virtual FractalType type() const noexcept = 0;
 
     const FractalParams& params() const noexcept { return params_; }
