@@ -54,7 +54,6 @@ void Renderer::ensureFramebuffer(int w, int h) {
     // избегаем пересоздания FBO при мелких изменениях (осцилляции масштаба):
     // оставляем существующий буфер, рендер просто пройдёт в его размере.
     if (fbo_ && std::abs(w - width_) < 8 && std::abs(h - height_) < 8) return;
-    if (fbo_ && w == width_ && h == height_) return;
 
     width_ = w;
     height_ = h;
@@ -183,7 +182,10 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
             maxSteps = static_cast<int>(140 + 160 * renderScale_);
             break;
         case core::fractal::FractalType::Terrain3D:
-            maxSteps = static_cast<int>(54 + 70 * renderScale_);
+            // террейн теперь марширует и по объектам (ели/валуны в составе
+            // поля) — в густом лесу лучи тратят больше шагов на сходимость,
+            // запас нужен, чтобы не прорезать «дыры» в кроне
+            maxSteps = static_cast<int>(64 + 90 * renderScale_);
             break;
         case core::fractal::FractalType::Coast3D:
             maxSteps = static_cast<int>(30 + 40 * renderScale_);
