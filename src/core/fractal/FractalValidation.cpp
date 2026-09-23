@@ -29,9 +29,16 @@ FractalParams sanitizeParams(const FractalParams& raw) {
             fractal.apply(raw);
             return fractal.params();
         }
-        default:
+        default: {
             // Terrain3D / Coast3D генерируются только шейдером, CPU-класса нет.
-            return raw;
+            // Автовращение — UI-режим только для 3D-фракталов (0..3): на
+            // «пейзаже»/«побережье» чекбокса нет, а висящий флаг крутил бы
+            // камеру (MainWindow вызывает camera().orbit() пока autoRotate).
+            // Единая точка сброса закрывает и стартовый config.json, и пресеты.
+            FractalParams out = raw;
+            out.autoRotate = false;
+            return out;
+        }
     }
 }
 

@@ -14,7 +14,7 @@ public:
     struct Settings {
         int width = 1280;
         int height = 720;
-        std::string title = "ars_fracta — Фракталы и фрактальное сжатие (курсовая работа)";
+        std::string title = "Ars Fracta";
         bool vsync = true;
         int glMajor = 3;
         int glMinor = 3;

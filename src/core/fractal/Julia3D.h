@@ -29,8 +29,6 @@ public:
         return {params_.juliaReal, params_.juliaImag, params_.juliaImag3D};
     }
 
-    const char* name() const noexcept override { return "Julia 3D"; }
-    bool is3D() const noexcept override { return true; }
     FractalType type() const noexcept override { return FractalType::Julia3D; }
 
 protected:

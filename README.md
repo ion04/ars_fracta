@@ -9,10 +9,12 @@
   - Mandelbulb 3D
   - Menger Sponge (губка Менгера)
   - Julia 3D
+  - Terrain 3D (процедурный пейзаж)
+  - Coast 3D (морское побережье вдоль границы множества Мандельброта)
 - Отменяемая асинхронная генерация в CPU worker без блокировки GUI.
 - Построение внешней поверхности губки Менгера и экспорт в Wavefront OBJ и binary STL.
 - GUI на Dear ImGui: панель параметров, пресеты (JSON), статусная строка.
-- Загрузка/сохранение PNG (stb_image), конфигурация приложения (nlohmann/json).
+- Сохранение скриншотов в PNG (stb_image), конфигурация приложения (nlohmann/json).
 
 Экспорт губки Менгера доступен в панели «Экспорт». Глубина
 итераций выбирается отдельно в диапазоне 0..4. Построение выполняется в worker;
@@ -28,7 +30,7 @@ STL записывается в стандартном binary-формате.
 cmake -S . -B build
 cmake --build build --config Release
 # запуск (Windows)
-.\build\Release\ars_fracta.exe
+.\build\ars_fracta.exe
 ```
 
 Зависимости (GLAD, GLFW, GLM, Dear ImGui, stb, nlohmann/json) скачиваются и собираются автоматически через `FetchContent` — первая конфигурация требует интернет.

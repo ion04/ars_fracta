@@ -109,10 +109,6 @@ GLint Shader::location(const std::string& name) const {
     return loc;
 }
 
-void Shader::setBool(const std::string& name, bool value) const {
-    glUniform1i(location(name), value ? 1 : 0);
-}
-
 void Shader::setInt(const std::string& name, int value) const {
     glUniform1i(location(name), value);
 }
@@ -127,14 +123,6 @@ void Shader::setVec2(const std::string& name, const glm::vec2& value) const {
 
 void Shader::setVec3(const std::string& name, const glm::vec3& value) const {
     glUniform3fv(location(name), 1, &value[0]);
-}
-
-void Shader::setVec4(const std::string& name, const glm::vec4& value) const {
-    glUniform4fv(location(name), 1, &value[0]);
-}
-
-void Shader::setMat4(const std::string& name, const glm::mat4& value) const {
-    glUniformMatrix4fv(location(name), 1, GL_FALSE, &value[0][0]);
 }
 
 } // namespace ars::render

@@ -106,11 +106,25 @@ Python. Несколько build-каталогов допустимы (gitignor
 - **Никогда не реализуй фичи сам, если есть Worker.** Commander — координатор, а не кодер. Вся реализация идёт через `Worker`.
 - **Ищи параллельные задачи.** Если две фичи не зависят друг от друга, запускай их параллельно отдельными потоками агентов.
 - **Используй правильную модель для задачи.** Не ставь `qwen3.8-max` на написание простых тестов — для этого есть `qwen3.8-flash`.
+- **Эскалация к ExpertDebugger — только после неудачи Worker.** ExpertDebugger (`gpt-5.6-luna`) вызывается, лишь если стандартный Worker не исправил критическую проблему компиляции C++, утечку памяти или shader bug; передавай ему полные логи/трассы/состояние render pipeline. После исправления обязательны обычные проверки и Reviewer.
 - **После каждой фичи запускай проверки.** Сборка + `test_core` + headless `-Werror`.
 
-## TESTING (обязательно для Worker и Reviewer)
+## TESTING (обязательно для Worker, ExpertDebugger и Reviewer)
 
 - **Всегда используй доступные инструменты тестирования.** В проекте это `test_core.exe` и headless-сборка с `-Werror`.
 - **Никогда не предполагай, что изменения работают.** Фраза «код выглядит правильно» — не доказательство. Запусти `test_core` и покажи вывод `=== Итог: 0 ошибок ===`.
 - **Если инструментов тестирования нет — спроси пользователя.** Не пропускай тесты молча.
 - **После правок в `ars_core` — обязательна headless-проверка.** Без неё изменения не считаются завершёнными.
+- **Фикс ExpertDebugger — не исключение.** После эскалации и исправления критической проблемы прогоняется полный набор проверок выше, затем ревью Reviewer'ом.
+
+## Скиллы агентов
+
+Агенты используют только разрешённые им скиллы (конфигурация в
+`~/.config/opencode/opencode.jsonc`) и перед профильной работой загружают
+подходящий скилл:
+
+- **Commander:** writing-plans, dispatching-parallel-agents, planning, setup-codemap-cli
+- **Planner:** codebase-design, spec-workflow, planning, writing-plans
+- **Worker:** cpp-coding-standards, shader-dev, cmake, test-driven-development, systematic-debugging
+- **ExpertDebugger:** cpp-coding-standards, cmake, shader-dev, systematic-debugging
+- **Reviewer:** requesting-code-review, diff-risk-review

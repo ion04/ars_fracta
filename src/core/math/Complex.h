@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cmath>
-#include <ostream>
 
 namespace ars::core::math {
 
@@ -33,7 +32,6 @@ public:
     double magnitude() const { return std::sqrt(magnitudeSquared()); }
     double argument() const { return std::atan2(im, re); }
 
-    constexpr Complex conjugate() const { return {re, -im}; }
     constexpr Complex squared() const { return *this * *this; }
 
     /// Возведение в степень n (для фракталов Жюлиа/Мандельброта).
@@ -45,17 +43,8 @@ public:
         return {rn * std::cos(theta), rn * std::sin(theta)};
     }
 
-    static Complex fromPolar(double r, double theta) {
-        return {r * std::cos(theta), r * std::sin(theta)};
-    }
-
     friend constexpr bool operator==(const Complex& a, const Complex& b) {
         return a.re == b.re && a.im == b.im;
-    }
-
-    friend std::ostream& operator<<(std::ostream& os, const Complex& z) {
-        os << '(' << z.re << ", " << z.im << ')';
-        return os;
     }
 };
 

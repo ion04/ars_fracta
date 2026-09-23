@@ -1,5 +1,6 @@
 #include "gui/MainWindow.h"
 #include "gui/ControlPanel.h"
+#include "gui/Layout.h"
 #include "gui/Viewport.h"
 #include "render/Renderer.h"
 #include "render/Window.h"
@@ -19,6 +20,15 @@
 
 namespace ars::gui {
 
+// Автовращение — режим только 3D-фракталов (0..3). Для «пейзажа»/«побережья»
+// (перекрытие типов 4/5, где камера закреплена своим видом) вращение не
+// применяется никогда, даже если флаг autoRotate попал в параметры из
+// config.json/пресета (доп. страховка к sanitizeParams).
+static bool isAutoRotateSupported(core::fractal::FractalType type) {
+    return type != core::fractal::FractalType::Terrain3D &&
+           type != core::fractal::FractalType::Coast3D;
+}
+
 MainWindow::MainWindow(render::Window& window) : window_(&window) {}
 
 void MainWindow::setCameraView(const glm::vec3& eye, const glm::vec3& aim) {
@@ -29,9 +39,15 @@ void MainWindow::setCameraFov(float fovDeg) {
     if (renderer_) renderer_->camera().setFov(fovDeg);
 }
 
-bool MainWindow::captureFrame(std::vector<std::uint8_t>& pixels,
-                              int& width, int& height) const {
-    if (!renderer_ || !renderer_->captureFrame(pixels)) return false;
+bool MainWindow::renderScreenshot(std::vector<std::uint8_t>& pixels,
+                                  int& width, int& height) {
+    if (!renderer_) return false;
+    // Снимок рендерим в полном разрешении: адаптивный масштаб в runFrame
+    // на первом кадре режет буфер до ~200k пикселей, что не нужно для снимка.
+    motionScale_ = 0.0f;
+    renderer_->setRenderScale(1.0f);
+    if (!renderer_->renderFrame(params_, 0.0f)) return false;
+    if (!renderer_->captureFrame(pixels)) return false;
     width = renderer_->width();
     height = renderer_->height();
     return true;
@@ -103,7 +119,7 @@ void MainWindow::runFrame(float deltaTime) {
     handleInput();
 
     // --- автовращение ---
-    if (params_.autoRotate) {
+    if (params_.autoRotate && isAutoRotateSupported(params_.type)) {
         renderer_->camera().orbit(deltaTime * 10.0f, 0.0f);
     }
 
@@ -164,7 +180,7 @@ void MainWindow::runFrame(float deltaTime) {
     }
 
     // --- рендер фрактала в offscreen FBO ---
-    // Меряем ЧИСТОЕ время рендера (glFinish до swap), без влияния vsync,
+    // Измеряем ЧИСТОЕ время рендера (glFinish до swap), без влияния vsync,
     // чтобы автоподбор масштаба не осциллировал от ожидания обновления.
     const float t = static_cast<float>(glfwGetTime());
     std::chrono::steady_clock::time_point renderStart;
@@ -186,7 +202,7 @@ void MainWindow::runFrame(float deltaTime) {
     ImGui::NewFrame();
 
     controlPanel_->draw();
-    viewport_->draw(deltaTime);
+    viewport_->draw();
 
     // --- статус-бар ---
     {

@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
         app.setCameraView(eye, glm::vec3(-1.5f, 2.2f, 10.0f));
         app.setCameraFov(52.0f);
     } else if (config.fractal.type == core::fractal::FractalType::Coast3D) {
-        // coastC(0, 0) == uCoastCenter, so center the coast at the world origin.
+        // центр побережья лежит в начале координат (coastCenter == (0, 0))
         const float eyeY = std::max(9.0f, config.fractal.terrainAmplitude * 1.55f);
         const glm::vec3 target(0.0f, 1.0f, 7.0f);
         app.setCameraView(glm::vec3(0.0f, eyeY, -22.0f), target);
@@ -82,13 +82,12 @@ int main(int argc, char** argv) {
     }
 
     if (screenshot) {
-        app.runFrame(0.0f);
         std::vector<std::uint8_t> pixels;
         int captureWidth = 0;
         int captureHeight = 0;
         utils::Image image;
-        if (!app.captureFrame(pixels, captureWidth, captureHeight)) {
-            std::cerr << "Cannot capture rendered frame\n";
+        if (!app.renderScreenshot(pixels, captureWidth, captureHeight)) {
+            std::cerr << "Cannot render screenshot\n";
             return 3;
         }
         image.width = captureWidth;

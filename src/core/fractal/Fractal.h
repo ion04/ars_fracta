@@ -68,7 +68,8 @@ struct FractalParams {
                terrainFrequency == o.terrainFrequency &&
                cloudDensity == o.cloudDensity && treeDensity == o.treeDensity &&
                timeOfDay == o.timeOfDay && fogDensity == o.fogDensity &&
-               coastCenterRe == o.coastCenterRe && coastCenterIm == o.coastCenterIm;
+               coastCenterRe == o.coastCenterRe && coastCenterIm == o.coastCenterIm &&
+               autoRotate == o.autoRotate;
     }
     bool operator!=(const FractalParams& o) const { return !(*this == o); }
 };

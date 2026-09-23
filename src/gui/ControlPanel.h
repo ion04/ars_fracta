@@ -13,10 +13,6 @@ class Camera;
 
 namespace ars::gui {
 
-// Ширина панели управления и высота статус-бара (px).
-constexpr float kPanelWidth = 340.0f;
-constexpr float kStatusBarHeight = 26.0f;
-
 /**
  * @brief Панель управления параметрами фрактала и экспортом меша.
  */

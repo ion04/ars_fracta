@@ -1,5 +1,5 @@
 #include "gui/Viewport.h"
-#include "gui/ControlPanel.h"
+#include "gui/Layout.h"
 #include "render/Renderer.h"
 
 #include <imgui.h>
@@ -15,7 +15,7 @@ namespace ars::gui {
 Viewport::Viewport(render::Renderer& renderer, core::fractal::FractalParams& params)
     : renderer_(&renderer), params_(&params) {}
 
-void Viewport::draw(float /*deltaTime*/) {
+void Viewport::draw() {
     const ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(kPanelWidth, 0.0f));
     ImGui::SetNextWindowSize(
@@ -32,6 +32,13 @@ void Viewport::draw(float /*deltaTime*/) {
 
     // --- мышиный ввод ---
     if (hovered) {
+        // Новый жест: забываем остаток EMA, иначе резкое прошлое движение
+        // «выстрелит» в камеру на старте следующего (orbit/pan вызываются
+        // только во время драга, и сглаженная дельта иначе замерла бы).
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+            ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            renderer_->camera().resetSmoothing();
+        }
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
             renderer_->camera().orbit(io.MouseDelta.x * 0.15f,
                                       io.MouseDelta.y * 0.15f);
@@ -72,13 +79,10 @@ void Viewport::draw(float /*deltaTime*/) {
         const ImVec2 offset((avail.x - imgSize.x) * 0.5f,
                             (avail.y - imgSize.y) * 0.5f);
         const ImVec2 p0 = ImGui::GetCursorScreenPos();
-        ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offset.x,
-                                   ImGui::GetCursorPosY() + offset.y));
+        ImGui::SetCursorScreenPos(ImVec2(p0.x + offset.x, p0.y + offset.y));
         ImGui::Image((ImTextureID)(intptr_t)(tex),
                      imgSize, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
-        ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() - offset.x,
-                                   ImGui::GetCursorPosY() - offset.y));
-        (void)p0;
+        ImGui::SetCursorScreenPos(p0);
     }
 
     // --- оверлей ---

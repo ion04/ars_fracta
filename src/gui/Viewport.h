@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 #include "core/fractal/Fractal.h"
 
 namespace ars::render {
@@ -19,7 +17,7 @@ public:
     Viewport(render::Renderer& renderer, core::fractal::FractalParams& params);
 
     /// Нарисовать виджет (вызывать каждый кадр).
-    void draw(float deltaTime);
+    void draw();
 
 private:
     render::Renderer* renderer_ = nullptr;

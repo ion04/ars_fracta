@@ -22,8 +22,6 @@ public:
     /// Distance estimation: приближённое расстояние от точки p до поверхности.
     static double distanceEstimate(const math::Vector3& p, double power, int iterations);
 
-    const char* name() const noexcept override { return "Mandelbulb 3D"; }
-    bool is3D() const noexcept override { return true; }
     FractalType type() const noexcept override { return FractalType::Mandelbulb3D; }
 
 protected:

@@ -19,8 +19,6 @@ public:
     /// Distance estimation для губки Менгера.
     static double distanceEstimate(const math::Vector3& p, int iterations);
 
-    const char* name() const noexcept override { return "Menger Sponge"; }
-    bool is3D() const noexcept override { return true; }
     FractalType type() const noexcept override { return FractalType::MengerSponge; }
 
 protected:

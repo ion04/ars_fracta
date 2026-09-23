@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <vector>
 #include <cstdint>
 
@@ -38,7 +37,11 @@ public:
     // вид по умолчанию для пейзажа (используется в main.cpp)
     void setCameraView(const glm::vec3& eye, const glm::vec3& aim);
     void setCameraFov(float fovDeg);
-    bool captureFrame(std::vector<std::uint8_t>& pixels, int& width, int& height) const;
+
+    /// Отрисовать один кадр в полном разрешении и прочитать пиксели
+    /// (для --screenshot; без адаптивного понижения масштаба).
+    bool renderScreenshot(std::vector<std::uint8_t>& pixels,
+                          int& width, int& height);
 
 private:
     void handleInput();

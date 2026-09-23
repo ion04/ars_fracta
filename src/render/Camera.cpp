@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include <glm/gtc/matrix_transform.hpp>
-
 namespace ars::render {
 
 Camera::Camera() { updateVectors(); }
@@ -19,20 +17,24 @@ void Camera::updateVectors() {
 }
 
 void Camera::orbit(float dxDeg, float dyDeg) {
+    // Применяем экспоненциальное сглаживание (EMA)
+    smoothDelta_ = glm::mix(smoothDelta_, glm::vec2(dxDeg, dyDeg), smoothAlpha_);
+
     glm::vec3 dir = position_ - target_;
     const float dist = glm::length(dir);
     if (dist < 1e-6f) return;
     dir /= dist;
 
-    const float yaw = std::atan2(dir.x, dir.z) + glm::radians(dxDeg);
+    const float yaw = std::atan2(dir.x, dir.z) + glm::radians(smoothDelta_.x);
     const float pitch = glm::clamp(
-        std::asin(glm::clamp(dir.y, -1.0f, 1.0f)) + glm::radians(dyDeg),
+        std::asin(glm::clamp(dir.y, -1.0f, 1.0f)) + glm::radians(smoothDelta_.y),
         glm::radians(-89.0f), glm::radians(89.0f));
 
     dir = glm::normalize(glm::vec3(std::cos(pitch) * std::sin(yaw),
                                    std::sin(pitch),
                                    std::cos(pitch) * std::cos(yaw)));
     position_ = target_ + dir * dist;
+    clampToMinHeight();
     ++revision_;
     updateVectors();
 }
@@ -41,18 +43,20 @@ void Camera::zoom(float factor) {
     const glm::vec3 to = position_ - target_;
     const float dist = glm::length(to);
     if (dist < 1e-6f) return;
-    const float newDist = glm::clamp(dist * (1.0f - factor), 0.05f, 100.0f);
+    const float newDist = glm::clamp(dist * (1.0f - factor), minDistance_, maxDistance_);
     position_ = target_ + to * (newDist / dist);
+    clampToMinHeight();
     ++revision_;
     updateVectors();
 }
 
-void Camera::pan(const glm::vec2& ndcOffset, float /*planeDepth*/) {
+void Camera::pan(const glm::vec2& ndcOffset) {
     const float dist = glm::length(position_ - target_);
     const float k = dist * 0.02f;
     const glm::vec3 delta = right_ * (-ndcOffset.x * k) + up_ * (ndcOffset.y * k);
     target_ += delta;
     position_ += delta;
+    clampToMinHeight();
     ++revision_;
     updateVectors();
 }
@@ -61,6 +65,7 @@ void Camera::moveForward(float amount) {
     const glm::vec3 d = front_ * amount;
     position_ += d;
     target_ += d;
+    clampToMinHeight();
     ++revision_;
 }
 
@@ -68,6 +73,7 @@ void Camera::moveRight(float amount) {
     const glm::vec3 d = right_ * amount;
     position_ += d;
     target_ += d;
+    clampToMinHeight();
     ++revision_;
 }
 
@@ -75,6 +81,7 @@ void Camera::moveUp(float amount) {
     const glm::vec3 d = up_ * amount;
     position_ += d;
     target_ += d;
+    clampToMinHeight();
     ++revision_;
 }
 
@@ -96,15 +103,41 @@ void Camera::setView(const glm::vec3& eye, const glm::vec3& aim) {
 void Camera::setFov(float fovDeg) {
     fovDeg_ = fovDeg;
     ++revision_;
-    updateVectors();
 }
 
-glm::mat4 Camera::viewMatrix() const {
-    return glm::lookAt(position_, target_, glm::vec3(0.0f, 1.0f, 0.0f));
+void Camera::setZoomLimits(float minDist, float maxDist) {
+    // Валидация: нормализуем некорректный диапазон (min <= max, >= 0)
+    if (minDist > maxDist) std::swap(minDist, maxDist);
+    minDistance_ = std::max(minDist, 0.0f);
+    maxDistance_ = std::max(maxDist, 0.0f);
+    // Применяем ограничения к текущей дистанции
+    const glm::vec3 to = position_ - target_;
+    const float dist = glm::length(to);
+    if (dist > 1e-6f) {
+        const float clampedDist = glm::clamp(dist, minDistance_, maxDistance_);
+        if (std::abs(clampedDist - dist) > 1e-6f) {
+            position_ = target_ + to * (clampedDist / dist);
+            ++revision_;
+        }
+    }
 }
 
-glm::mat4 Camera::projectionMatrix(float aspect) const {
-    return glm::perspective(glm::radians(fovDeg_), aspect, 0.05f, 1000.0f);
+void Camera::setMinHeight(float minHeight) {
+    minHeight_ = minHeight;
+    clampToMinHeight();
+}
+
+void Camera::resetSmoothing() {
+    smoothDelta_ = glm::vec2(0.0f, 0.0f);
+}
+
+void Camera::clampToMinHeight() {
+    const float clampedY = glm::max(position_.y, minHeight_);
+    if (std::abs(clampedY - position_.y) > 1e-6f) {
+        position_.y = clampedY;
+        ++revision_;
+        updateVectors();
+    }
 }
 
 ViewBasis Camera::basis() const {

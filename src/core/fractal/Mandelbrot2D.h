@@ -22,8 +22,6 @@ public:
     static double smoothEscapeTime(const math::Complex& c, int maxIter = 255,
                                    double escapeRadius = 2.0);
 
-    const char* name() const noexcept override { return "Mandelbrot 2D"; }
-    bool is3D() const noexcept override { return false; }
     FractalType type() const noexcept override { return FractalType::Mandelbrot2D; }
 
 protected:

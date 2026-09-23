@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 
 namespace ars::core::math {
@@ -30,7 +29,6 @@ public:
     constexpr double dot(const Vector3& o) const { return x * o.x + y * o.y + z * o.z; }
     constexpr double lengthSquared() const { return dot(*this); }
     double length() const { return std::sqrt(lengthSquared()); }
-    double distance(const Vector3& o) const { return (*this - o).length(); }
 
     constexpr Vector3 cross(const Vector3& o) const {
         return {y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x};
@@ -42,14 +40,6 @@ public:
     }
 
     Vector3 abs() const { return {std::fabs(x), std::fabs(y), std::fabs(z)}; }
-
-    /// Положительное по компонентам: (|x|, |y|, |z|).
-    Vector3 componentMax(const Vector3& o) const {
-        return {std::max(x, o.x), std::max(y, o.y), std::max(z, o.z)};
-    }
-    Vector3 componentMin(const Vector3& o) const {
-        return {std::min(x, o.x), std::min(y, o.y), std::min(z, o.z)};
-    }
 };
 
 } // namespace ars::core::math

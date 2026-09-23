@@ -150,6 +150,27 @@ int main() {
             terrain.type = FractalType::Terrain3D;
             check(core::fractal::sanitizeParams(terrain).type == FractalType::Terrain3D,
                   "sanitizeParams(Terrain3D) не трогает shader-тип");
+
+            // автовращение — UI-режим только 3D-фракталов (0..3): для пейзажа/
+            // побережья sanitizeParams принудительно сбрасывает флаг даже если он
+            // доехал из config.json или пресета (см. MainWindow::orbit gate).
+            FractalParams terrainRot;
+            terrainRot.type = FractalType::Terrain3D;
+            terrainRot.autoRotate = true;
+            check(!core::fractal::sanitizeParams(terrainRot).autoRotate,
+                  "sanitizeParams(Terrain3D) сбрасывает autoRotate");
+
+            FractalParams coastRot;
+            coastRot.type = FractalType::Coast3D;
+            coastRot.autoRotate = true;
+            check(!core::fractal::sanitizeParams(coastRot).autoRotate,
+                  "sanitizeParams(Coast3D) сбрасывает autoRotate");
+
+            FractalParams bulbRot;
+            bulbRot.type = FractalType::Mandelbulb3D;
+            bulbRot.autoRotate = true;
+            check(core::fractal::sanitizeParams(bulbRot).autoRotate,
+                  "sanitizeParams(Mandelbulb3D) оставляет autoRotate включённым");
         }
 
         std::ifstream shader("assets/shaders/fractal.frag");
