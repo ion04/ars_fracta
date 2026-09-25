@@ -1,8 +1,6 @@
 #include "gui/ControlPanel.h"
 #include "gui/Layout.h"
 
-#include "core/export/MeshExporter.h"
-#include "core/fractal/MengerMesh.h"
 #include "render/Camera.h"
 #include "utils/Config.h"
 
@@ -11,20 +9,13 @@
 #include <glm/glm.hpp>
 
 #include <algorithm>
-#include <exception>
 #include <filesystem>
 #include <limits>
-#include <memory>
 #include <string>
 
 namespace fs = std::filesystem;
 
 namespace ars::gui {
-
-struct ControlPanel::MeshExportResult {
-    bool cancelled = false;
-    std::string info;
-};
 
 using core::fractal::FractalParams;
 using core::fractal::FractalType;
@@ -103,10 +94,8 @@ void ControlPanel::draw() {
     ImGui::SetNextWindowSize(ImVec2(kPanelWidth, io.DisplaySize.y - kStatusBarHeight));
     ImGui::Begin("Управление", nullptr,
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
     drawFractalSection();
-    ImGui::Separator();
-    drawExportSection();
     ImGui::End();
 }
 
@@ -119,8 +108,8 @@ void ControlPanel::drawFractalSection() {
             const FractalType oldType = p.type;
             const FractalType newType = static_cast<FractalType>(typeIndex_);
             if (newType != oldType) {
-                // Сохраняем позицию камеры при переключении между 3D-фракталами (0/1/2/3).
-                // Сбрасываем только при переходе с Terrain/Coast на 3D-фрактал.
+                // При смене обычного 3D-фракта (Mandelbulb/Menger/Julia) камеру
+                // не трогаем: пользователь продолжает смотреть с той же позиции.
                 if (newType == FractalType::Terrain3D) {
                     placeTerrainCamera(*camera_, p);
                     camera_->setZoomLimits(p.terrainAmplitude * 1.2f, 100.0f);
@@ -128,16 +117,20 @@ void ControlPanel::drawFractalSection() {
                     p.autoRotate = false;  // отключаем автовращение для пейзажа
                 } else if (newType == FractalType::Coast3D) {
                     placeCoastCamera(*camera_, p);
-                    camera_->setZoomLimits(0.5f, 50.0f);
+                    camera_->setZoomLimits(0.5f, 100.0f);
                     camera_->setMinHeight(kMinGroundHeight);  // не залезать под море/пляж
                     p.autoRotate = false;  // отключаем автовращение для побережья
-                } else if (oldType == FractalType::Terrain3D || oldType == FractalType::Coast3D) {
-                    // Переход С пейзажа НА 3D-фрактал → сбросить камеру
+                } else if (newType == FractalType::Mandelbrot2D ||
+                           oldType == FractalType::Mandelbrot2D ||
+                           oldType == FractalType::Terrain3D ||
+                           oldType == FractalType::Coast3D) {
+                    // При переходе между 2D и 3D либо из пейзажной категории
+                    // возвращаем камеру к исходному положению.
                     camera_->reset();
                     camera_->setZoomLimits(0.05f, 100.0f);
                     camera_->setMinHeight(kNoGroundLimit);  // свободная 3D-орбита
                 }
-                // Иначе (3D → 3D или 2D → 3D) — камера сохраняется
+                // Иначе (обычный 3D → обычный 3D) — камера сохраняется.
             }
             p.type = newType;
         }
@@ -255,7 +248,7 @@ void ControlPanel::drawFractalSection() {
                                 camera_->setMinHeight(kMinGroundHeight);
                             } else if (p.type == FractalType::Coast3D) {
                                 placeCoastCamera(*camera_, p);
-                                camera_->setZoomLimits(0.5f, 50.0f);
+                                camera_->setZoomLimits(0.5f, 100.0f);
                                 camera_->setMinHeight(kMinGroundHeight);
                             } else {
                                 camera_->reset();   // фрактал в исходной позиции
@@ -278,72 +271,6 @@ void ControlPanel::drawFractalSection() {
             loadPresetsIntoList();
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-//  Экспорт
-// ---------------------------------------------------------------------------
-
-void ControlPanel::drawExportSection() {
-    pollExportJob();
-    if (ImGui::CollapsingHeader("Экспорт", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::SliderInt("Глубина mesh Менгера", &meshIterations_, 0, 4);
-        const bool running = static_cast<bool>(exportResult_);
-        ImGui::BeginDisabled(running);
-        if (ImGui::Button("Экспортировать губку Менгера (OBJ + STL)")) {
-            exportMengerMesh();
-        }
-        ImGui::EndDisabled();
-        if (running) {
-            ImGui::SameLine();
-            if (ImGui::Button("Отмена")) exportJob_.cancel();
-            ImGui::TextUnformatted("Выполняется в фоне...");
-        }
-        if (exportDone_) {
-            ImGui::Spacing();
-            ImGui::TextWrapped("%s", exportInfo_.c_str());
-        }
-    }
-}
-
-void ControlPanel::exportMengerMesh() {
-    exportDone_ = false;
-    exportInfo_.clear();
-    exportResult_ = std::make_shared<MeshExportResult>();
-    const auto result = exportResult_;
-    const int depth = meshIterations_;
-    exportJob_ = core::async::JobSystem::submit([result, depth](const auto& token) {
-        const auto mesh = core::fractal::MengerMesh::build(
-            depth, [&token] { return token.isCancelled(); });
-        if (token.isCancelled()) {
-            result->cancelled = true;
-            return;
-        }
-        // File writing is a non-cancellable final stage; UI keeps polling the worker.
-        const bool objSaved = core::exporter::MeshExporter::writeObj("menger_sponge.obj", mesh);
-        const bool stlSaved = core::exporter::MeshExporter::writeBinaryStl("menger_sponge.stl", mesh);
-        result->info = objSaved && stlSaved
-            ? "Сохранено: menger_sponge.obj, menger_sponge.stl (" +
-                  std::to_string(mesh.triangleCount()) + " треугольников)"
-            : "Ошибка экспорта губки Менгера";
-    });
-}
-
-void ControlPanel::pollExportJob() {
-    if (!exportResult_ || !exportJob_.ready()) return;
-    try {
-        exportJob_.wait();
-        exportInfo_ = exportResult_->cancelled ? "Операция отменена"
-                                               : exportResult_->info;
-        exportDone_ = true;
-    } catch (const std::exception& error) {
-        exportInfo_ = std::string("Ошибка фоновой задачи: ") + error.what();
-        exportDone_ = true;
-    } catch (...) {
-        exportInfo_ = "Неизвестная ошибка фоновой задачи";
-        exportDone_ = true;
-    }
-    exportResult_.reset();
 }
 
 } // namespace ars::gui

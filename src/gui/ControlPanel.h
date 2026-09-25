@@ -1,10 +1,8 @@
 #pragma once
 
-#include <memory>
 #include <string>
 #include <vector>
 
-#include "core/async/JobSystem.h"
 #include "core/fractal/Fractal.h"
 
 namespace ars::render {
@@ -14,7 +12,7 @@ class Camera;
 namespace ars::gui {
 
 /**
- * @brief Панель управления параметрами фрактала и экспортом меша.
+ * @brief Панель управления параметрами фрактала.
  */
 class ControlPanel {
 public:
@@ -25,9 +23,6 @@ public:
 
 private:
     void drawFractalSection();
-    void drawExportSection();
-    void exportMengerMesh();
-    void pollExportJob();
     void loadPresetsIntoList();
 
     core::fractal::FractalParams* params_ = nullptr;
@@ -43,13 +38,6 @@ private:
     int presetIndex_ = -1;
     bool presetsLoaded_ = false;
 
-    // результат последнего экспорта меша
-    bool exportDone_ = false;
-    std::string exportInfo_;
-    struct MeshExportResult;
-    std::shared_ptr<MeshExportResult> exportResult_;
-    core::async::Job exportJob_;
-    int meshIterations_ = 2;
 };
 
 } // namespace ars::gui

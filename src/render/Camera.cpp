@@ -18,16 +18,17 @@ void Camera::updateVectors() {
 
 void Camera::orbit(float dxDeg, float dyDeg) {
     // Применяем экспоненциальное сглаживание (EMA)
-    smoothDelta_ = glm::mix(smoothDelta_, glm::vec2(dxDeg, dyDeg), smoothAlpha_);
+    smoothOrbitDelta_ = glm::mix(
+        smoothOrbitDelta_, glm::vec2(dxDeg, dyDeg), kSmoothingAlpha);
 
     glm::vec3 dir = position_ - target_;
     const float dist = glm::length(dir);
     if (dist < 1e-6f) return;
     dir /= dist;
 
-    const float yaw = std::atan2(dir.x, dir.z) + glm::radians(smoothDelta_.x);
+    const float yaw = std::atan2(dir.x, dir.z) + glm::radians(smoothOrbitDelta_.x);
     const float pitch = glm::clamp(
-        std::asin(glm::clamp(dir.y, -1.0f, 1.0f)) + glm::radians(smoothDelta_.y),
+        std::asin(glm::clamp(dir.y, -1.0f, 1.0f)) + glm::radians(smoothOrbitDelta_.y),
         glm::radians(-89.0f), glm::radians(89.0f));
 
     dir = glm::normalize(glm::vec3(std::cos(pitch) * std::sin(yaw),
@@ -39,21 +40,35 @@ void Camera::orbit(float dxDeg, float dyDeg) {
     updateVectors();
 }
 
-void Camera::zoom(float factor) {
+void Camera::zoom(float factor, const core::fractal::FractalParams& fractalParams) {
+    smoothZoomDelta_ = kSmoothingAlpha * factor +
+                       (1.0f - kSmoothingAlpha) * smoothZoomDelta_;
     const glm::vec3 to = position_ - target_;
     const float dist = glm::length(to);
     if (dist < 1e-6f) return;
-    const float newDist = glm::clamp(dist * (1.0f - factor), minDistance_, maxDistance_);
+    const float newDist = glm::clamp(
+        dist * (1.0f - smoothZoomDelta_), minDistance_, maxDistance_);
     position_ = target_ + to * (newDist / dist);
+
+    const auto type = fractalParams.type;
+    if (type == core::fractal::FractalType::Terrain3D ||
+        type == core::fractal::FractalType::Coast3D) {
+        constexpr float kTerrainClearance = 1.2f;
+        const float minEyeY = fractalParams.terrainAmplitude * kTerrainClearance;
+        position_.y = std::max(position_.y, std::nextafter(
+            minEyeY, std::numeric_limits<float>::infinity()));
+    }
     clampToMinHeight();
     ++revision_;
     updateVectors();
 }
 
 void Camera::pan(const glm::vec2& ndcOffset) {
+    smoothPanDelta_ = glm::mix(smoothPanDelta_, ndcOffset, kSmoothingAlpha);
     const float dist = glm::length(position_ - target_);
     const float k = dist * 0.02f;
-    const glm::vec3 delta = right_ * (-ndcOffset.x * k) + up_ * (ndcOffset.y * k);
+    const glm::vec3 delta = right_ * (-smoothPanDelta_.x * k) +
+                            up_ * (smoothPanDelta_.y * k);
     target_ += delta;
     position_ += delta;
     clampToMinHeight();
@@ -128,7 +143,9 @@ void Camera::setMinHeight(float minHeight) {
 }
 
 void Camera::resetSmoothing() {
-    smoothDelta_ = glm::vec2(0.0f, 0.0f);
+    smoothOrbitDelta_ = glm::vec2(0.0f, 0.0f);
+    smoothPanDelta_ = glm::vec2(0.0f, 0.0f);
+    smoothZoomDelta_ = 0.0f;
 }
 
 void Camera::clampToMinHeight() {

@@ -15,7 +15,7 @@ Window::Window(const Settings& settings) : settings_(settings),
 
 Window::~Window() {
     if (window_) glfwDestroyWindow(window_);
-    glfwTerminate();
+    if (glfwInitialized_) glfwTerminate();
 }
 
 bool Window::init() {
@@ -23,6 +23,7 @@ bool Window::init() {
         std::cerr << "[Window] glfwInit() failed\n";
         return false;
     }
+    glfwInitialized_ = true;
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, settings_.glMajor);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, settings_.glMinor);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -30,7 +31,6 @@ bool Window::init() {
     window_ = glfwCreateWindow(width_, height_, settings_.title.c_str(), nullptr, nullptr);
     if (!window_) {
         std::cerr << "[Window] Cannot create GLFW window\n";
-        glfwTerminate();
         return false;
     }
 

@@ -104,8 +104,6 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
 # --- core: math + fractal generation (no OpenGL dependency) -----------------
 add_library(ars_core STATIC
     src/core/async/JobSystem.cpp
-    src/core/export/MeshExporter.cpp
-    src/core/fractal/MengerMesh.cpp
     src/core/fractal/Mandelbrot2D.cpp
     src/core/fractal/Mandelbulb3D.cpp
     src/core/fractal/FractalValidation.cpp

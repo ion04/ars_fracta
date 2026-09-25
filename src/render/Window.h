@@ -43,6 +43,7 @@ private:
 
     Settings settings_;
     GLFWwindow* window_ = nullptr;
+    bool glfwInitialized_ = false;
     int width_ = 0;
     int height_ = 0;
 };

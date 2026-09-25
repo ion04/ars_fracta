@@ -105,6 +105,9 @@ GLint Shader::location(const std::string& name) const {
     const auto it = locations_.find(name);
     if (it != locations_.end()) return it->second;
     const GLint loc = glGetUniformLocation(program_, name.c_str());
+    if (loc == -1) {
+        std::cerr << "[Shader] Warning: uniform '" << name << "' not found\n";
+    }
     locations_[name] = loc;
     return loc;
 }

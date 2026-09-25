@@ -124,58 +124,49 @@ void MainWindow::runFrame(float deltaTime) {
     }
 
     // --- адаптивное разрешение ---
-    // Пока камера/параметры меняются, рендерим в пониженном разрешении.
-    // Масштаб подстраивается под целевую длительность кадра (dt ~16 мс):
-    // зависаем (dt>цели) -> снижаем масштаб, есть запас -> повышаем (до полного).
-    // При остановке рендерим один кадр в полном качестве.
     const bool animatedScene =
         params_.type == core::fractal::FractalType::Coast3D ||
         (params_.type == core::fractal::FractalType::Terrain3D &&
          params_.cloudDensity > 0.0f);
-    const bool sceneMoving =
-        animatedScene || params_.autoRotate ||
-        renderer_->camera().revision() != lastCameraRev_ ||
-        !(params_ == lastParams_);
+    const bool userInteraction =
+         params_.autoRotate ||
+         renderer_->camera().revision() != lastCameraRev_ ||
+         !(params_ == lastParams_);
     lastCameraRev_ = renderer_->camera().revision();
     lastParams_ = params_;
 
+    // Адаптивное разрешение применяется как для интерактивного движения,
+    // так и для фоновой анимации (разные целевые времена кадра).
+    const bool needsAdaptiveScale = userInteraction || animatedScene;
     float effectiveScale = renderScale_;
-    if (sceneMoving) {
-        // Целевая частота >= 45 fps: кадр ~22 мс.
-        // frameMs_ — чистое время рендера FBO (EMA). Зона бездействия
-        // 20-23 мс: ниже растем (качество), выше плавно снижаем масштаб.
-        const float kLowerMs = 20.0f;
-        const float kUpperMs = 23.0f;
+    if (needsAdaptiveScale) {
+        // Интерактивное движение: 20-23 мс (45+ FPS).
+        // Фоновая анимация: 30-35 мс (30+ FPS).
+        const float kLowerMs = userInteraction ? 20.0f : 30.0f;
+        const float kUpperMs = userInteraction ? 23.0f : 35.0f;
 
         if (motionScale_ <= 0.0f) {
-            // первый кадр движения: не рисуем "в лоб" полный рендер.
-            // Ограничиваем его ~200 тыс. пикселей, чтобы не было фриза
-            // на старте (особенно на полном экране).
             const int winW = renderer_->width() > 0 ? renderer_->width()
                                                     : window_->width();
             const int winH = renderer_->height() > 0 ? renderer_->height()
                                                      : window_->height();
-            const float pxTarget = 200000.0f;
+            const float pxTarget = userInteraction ? 200000.0f : 400000.0f;
             motionScale_ = std::min(renderScale_,
-                                    std::sqrt(pxTarget /
-                                              std::max(1.0f,
+                                     std::sqrt(pxTarget /
+                                               std::max(1.0f,
                                                        static_cast<float>(winW) *
                                                            static_cast<float>(winH))));
             motionScale_ = std::max(0.125f, motionScale_);
         } else if (frameMs_ > kUpperMs) {
-            // заметно не успеваем: время рендера ~ scale^2, масштаб 1/sqrt(...).
-            // Меняем плавно — иначе система осциллирует вниз.
             const float ratio = std::sqrt(kUpperMs / std::max(frameMs_, 1.0f));
             motionScale_ *= std::max(0.85f, std::min(0.98f, ratio));
         } else if (frameMs_ > 0.0f && frameMs_ < kLowerMs) {
-            // есть запас -> повышаем к полному (до предела 45 fps)
             motionScale_ *= 1.05f;
         }
-        // между kLowerMs и kUpperMs масштаб не меняем (стабильность)
         effectiveScale = std::max(0.125f, std::min(renderScale_, motionScale_));
         renderer_->setRenderScale(effectiveScale);
     } else {
-        motionScale_ = 0.0f;  // следующий рывок начнёт заново
+        motionScale_ = 0.0f;
         renderer_->setRenderScale(renderScale_);
     }
 
@@ -184,9 +175,11 @@ void MainWindow::runFrame(float deltaTime) {
     // чтобы автоподбор масштаба не осциллировал от ожидания обновления.
     const float t = static_cast<float>(glfwGetTime());
     std::chrono::steady_clock::time_point renderStart;
-    if (sceneMoving) renderStart = std::chrono::steady_clock::now();
+    if (needsAdaptiveScale) renderStart = std::chrono::steady_clock::now();
+
+    // Рендер обязателен также для неподвижной статичной сцены.
     const bool frameRendered = renderer_->renderFrame(params_, t);
-    if (sceneMoving && frameRendered) {
+    if (needsAdaptiveScale && frameRendered) {
         glFinish();
         const double ms = std::chrono::duration<double, std::milli>(
                               std::chrono::steady_clock::now() - renderStart)

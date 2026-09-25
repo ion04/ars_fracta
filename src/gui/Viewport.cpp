@@ -55,8 +55,8 @@ void Viewport::draw() {
                 params_->m2dZoom = std::max(0.01f, std::min(30.0f, z));
                 // зум пишется в params_ напрямую — пропускаем через валидацию
                 *params_ = core::fractal::sanitizeParams(*params_);
-            } else {
-                renderer_->camera().zoom(io.MouseWheel * 0.07f);
+            } else if (params_) {
+                renderer_->camera().zoom(io.MouseWheel * 0.07f, *params_);
             }
         }
     }

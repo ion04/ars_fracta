@@ -6,19 +6,15 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <limits>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
 
 #include "core/async/JobSystem.h"
-#include "core/export/MeshExporter.h"
 #include "core/fractal/Fractal.h"
 #include "core/fractal/Julia3D.h"
 #include "core/fractal/Mandelbulb3D.h"
 #include "core/fractal/Mandelbrot2D.h"
-#include "core/fractal/MengerMesh.h"
 #include "core/fractal/MengerSponge.h"
 #include "core/fractal/SphericalDistance.h"
 #include "core/math/Complex.h"
@@ -320,74 +316,6 @@ int main() {
         }
         check(bulbMatches, "Mandelbulb3D DE == sphericalDistanceEstimate(p, p)");
         check(juliaMatches, "Julia3D DE == sphericalDistanceEstimate(p, c)");
-    }
-
-    // --- Экспорт поверхности губки Менгера в OBJ и binary STL ---
-    {
-        const auto mesh = core::fractal::MengerMesh::build(1);
-        check(!mesh.empty() && mesh.triangleCount() == 144,
-              "MengerMesh(1): 20*6 - 24*2 = 72 внешние грани (144 треугольника)");
-        const auto cube = core::fractal::MengerMesh::build(0);
-        check(cube.triangleCount() == 12, "MengerMesh(0): 12 треугольников куба");
-        bool outward = true;
-        for (std::size_t i = 0; i < cube.vertices.size(); i += 3) {
-            const auto& a = cube.vertices[i];
-            const auto& b = cube.vertices[i + 1];
-            const auto& c = cube.vertices[i + 2];
-            outward = outward && (b - a).cross(c - a).dot(a + b + c) > 0.0;
-        }
-        check(outward, "Все нормали куба направлены наружу");
-        int meshCancellationPolls = 0;
-        const auto cancelledMesh = core::fractal::MengerMesh::build(3, [&] {
-            return ++meshCancellationPolls >= 2;
-        });
-        check(cancelledMesh.empty() && meshCancellationPolls >= 2,
-              "MengerMesh кооперативно прерывает построение");
-
-        const std::string objPath = "test_menger.obj";
-        const std::string stlPath = "test_menger.stl";
-        check(core::exporter::MeshExporter::writeObj(objPath, mesh), "MeshExporter::writeObj()");
-        check(core::exporter::MeshExporter::writeBinaryStl(stlPath, mesh),
-              "MeshExporter::writeBinaryStl()");
-
-        {
-            std::ifstream obj(objPath);
-            std::string line;
-            std::size_t vertices = 0, faces = 0;
-            bool validIndices = true;
-            while (std::getline(obj, line)) {
-                if (line.rfind("v ", 0) == 0) ++vertices;
-                if (line.rfind("f ", 0) == 0) {
-                    std::istringstream face(line.substr(2));
-                    std::size_t a = 0, b = 0, c = 0;
-                    validIndices = validIndices && static_cast<bool>(face >> a >> b >> c);
-                    validIndices = validIndices && a == faces * 3 + 1 && b == a + 1 && c == b + 1;
-                    ++faces;
-                }
-            }
-            check(vertices == mesh.vertices.size() && faces == mesh.triangleCount() && validIndices,
-                  "OBJ содержит все вершины и корректные 1-based индексы");
-        }
-        {
-            std::ifstream stl(stlPath, std::ios::binary | std::ios::ate);
-            check(stl.tellg() == static_cast<std::streamoff>(84 + 50 * mesh.triangleCount()),
-                  "STL: размер 84 + 50*N байт");
-            stl.seekg(80);
-            unsigned char count[4]{};
-            stl.read(reinterpret_cast<char*>(count), 4);
-            check(count[0] == 144 && count[1] == 0 && count[2] == 0 && count[3] == 0,
-                  "STL: число треугольников в little-endian");
-        }
-        auto invalid = cube;
-        invalid.vertices[0].x = std::numeric_limits<double>::quiet_NaN();
-        const bool invalidObjRejected = !core::exporter::MeshExporter::writeObj(objPath, invalid);
-        const bool invalidStlRejected =
-            !core::exporter::MeshExporter::writeBinaryStl(stlPath, invalid);
-        check(invalidObjRejected && invalidStlRejected,
-              "Экспорт отклоняет нечисловые координаты");
-
-        std::remove(objPath.c_str());
-        std::remove(stlPath.c_str());
     }
 
     std::cout << "\n=== Итог: " << failures << " ошибок ===\n";

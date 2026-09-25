@@ -13,7 +13,7 @@
     "m2dZoom": 1.0,
     "terrainAmplitude": 6.0,
     "terrainFrequency": 0.12,
-    "cloudDensity": 0.6,
+    "cloudDensity": 0.0,
     "treeDensity": 0.5,
     "timeOfDay": 0.35,
     "autoRotate": false
