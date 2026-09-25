@@ -5,53 +5,53 @@
 ## Возможности
 
 - Интерактивная визуализация в реальном времени (ray marching в фрагментном шейдере):
-  - Mandelbrot 2D
-  - Mandelbulb 3D
-  - Menger Sponge (губка Менгера)
-  - Julia 3D
-  - Terrain 3D (процедурный пейзаж)
-  - Coast 3D (морское побережье вдоль границы множества Мандельброта)
-- Отменяемая асинхронная генерация в CPU worker без блокировки GUI.
-- GUI на Dear ImGui: панель параметров, пресеты (JSON), статусная строка.
-- Сохранение скриншотов в PNG (stb_image), конфигурация приложения (nlohmann/json).
+  - **Mandelbrot 2D** — классическое множество Мандельброта
+  - **Mandelbulb 3D** — трёхмерная фрактальная сфера
+  - **Menger Sponge** — губка Менгера (фрактальный куб)
+  - **Julia 3D** — множество Жюлиа в трёх измерениях
+  - **Terrain 3D** — процедурный пейзаж с деревьями, скалами, ambient occlusion
+  - **Coast 3D** — морское побережье вдоль границы множества Мандельброта с Gerstner waves
+- Плавная орбитальная камера с EMA-сглаживанием и адаптивными границами
+- Адаптивное разрешение: 30+ FPS для анимированных сцен, 45+ FPS при интерактивном движении
+- GUI на Dear ImGui: панель параметров, пресеты (JSON), статусная строка
+- Сохранение скриншотов в PNG (stb_image), конфигурация приложения (nlohmann/json)
+- Headless-рендер: `ars_fracta.exe --screenshot out.png [preset.json]`
 
 
 ## Сборка
 
-Требования: CMake >= 3.21, компилятор с поддержкой C++17 (MSVC/GCC), OpenGL 3.3+, Python (нужен для генерации GLAD).
+Требования: CMake >= 3.21, MinGW-w64 (C++17), OpenGL 3.3+, Python (для генерации GLAD).
 
 ```sh
-cmake -S . -B build
-cmake --build build --config Release
+cmake -G "MinGW Makefiles" -S . -B build
+mingw32-make -C build ars_fracta
 # запуск (Windows)
 .\build\ars_fracta.exe
+
+# headless-рендер в PNG
+.\build\ars_fracta.exe --screenshot terrain.png assets/presets/landscape.json
 ```
 
-Зависимости (GLAD, GLFW, GLM, Dear ImGui, stb, nlohmann/json) скачиваются и собираются автоматически через `FetchContent` — первая конфигурация требует интернет.
+Зависимости (GLAD, GLFW, GLM, Dear ImGui, stb, nlohmann/json) скачиваются автоматически через `FetchContent` — первая конфигурация требует интернет (~2 мин).
 
 ## Тесты
 
 ```sh
-ctest --test-dir build -C Release --output-on-failure
+mingw32-make -C build test_core
+.\build\test_core.exe
 ```
 
-Для измерения покрытия CPU-кода (GCC/MinGW) используется отдельная конфигурация:
+Для headless-сборки с `-Werror` (проверка без GUI):
 
 ```sh
-cmake -S . -B build-coverage -DARS_FRACTA_BUILD_GUI=OFF \
-  -DARS_FRACTA_BUILD_TESTS=ON -DARS_FRACTA_ENABLE_COVERAGE=ON
-cmake --build build-coverage
-ctest --test-dir build-coverage --output-on-failure
-# При установленном gcovr:
-cmake --build build-coverage --target coverage
+cmake -G "MinGW Makefiles" -S . -B build-quality-werror \
+  -DARS_FRACTA_BUILD_GUI=OFF -DARS_FRACTA_BUILD_TESTS=ON \
+  -DARS_FRACTA_WARNINGS_AS_ERRORS=ON
+mingw32-make -C build-quality-werror
+.\build-quality-werror\test_core.exe
 ```
 
-Покрытие относится к CPU-модулям, которые запускаются тестовым стендом; GUI/OpenGL
-и shader-only генерация в процент CPU-покрытия не включаются.
-
-Тест `test_core` покрывает математику фракталов (Complex, Vector3, DE),
-фоновые CPU-задачи с отменой и переносом исключений, а также экспорт
-губки Менгера в OBJ/STL.
+Тест `test_core` покрывает математику фракталов (Complex, Vector3, DE), фоновые CPU-задачи с отменой и переносом исключений, а также валидацию параметров и JSON round-trip.
 
 ## Структура проекта
 
@@ -65,8 +65,7 @@ cmake --build build-coverage --target coverage
 │   ├── core/
 │   │   ├── math/               # Complex, Vector3
 │   │   ├── async/              # CancellationToken и joinable CPU Job
-│   │   ├── export/             # OBJ и binary STL
-│   │   └── fractal/            # CPU/GLSL-фракталы и MengerMesh
+│   │   └── fractal/            # CPU/GLSL-фракталы и валидация
 │   ├── render/                 # Window, Shader, Camera, Renderer (OpenGL)
 │   ├── gui/                    # MainWindow, ControlPanel, Viewport (ImGui)
 │   └── utils/                  # ImageLoader, Config, Logger
