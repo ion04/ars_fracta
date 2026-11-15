@@ -9,6 +9,9 @@ CMakeUserPresets.json
 # IDE
 .vs/
 .vscode/
+.opencode/
+docs/
+shemas/
 *.user
 *.suo
 *.ncb
@@ -23,3 +26,7 @@ config.json
 Thumbs.db
 Desktop.ini
 .DS_Store*.log
+
+# Python (скиллы .opencode/skills/*/scripts)
+__pycache__/
+*.pyc

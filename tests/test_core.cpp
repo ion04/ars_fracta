@@ -318,6 +318,61 @@ int main() {
         check(juliaMatches, "Julia3D DE == sphericalDistanceEstimate(p, c)");
     }
 
+    // --- Методы эквивалентного разбиения и граничных значений ---
+    {
+        using core::fractal::FractalParams;
+        using core::fractal::FractalType;
+        using core::math::Complex;
+        using core::fractal::Mandelbrot2D;
+
+        // sanitizeParams: границы числа итераций (15, 16, 17)
+        FractalParams p15;
+        p15.type = FractalType::Mandelbrot2D;
+        p15.iterations = 15;
+        check(core::fractal::sanitizeParams(p15).iterations == 16,
+              "sanitizeParams(Mandelbrot2D, iterations=15) == 16");
+
+        FractalParams p16;
+        p16.type = FractalType::Mandelbrot2D;
+        p16.iterations = 16;
+        check(core::fractal::sanitizeParams(p16).iterations == 16,
+              "sanitizeParams(Mandelbrot2D, iterations=16) == 16");
+
+        FractalParams p17;
+        p17.type = FractalType::Mandelbrot2D;
+        p17.iterations = 17;
+        check(core::fractal::sanitizeParams(p17).iterations == 17,
+              "sanitizeParams(Mandelbrot2D, iterations=17) == 17");
+
+        // escapeTime: границы множества Мандельброта
+        check(Mandelbrot2D::escapeTime(Complex(-2.0, 0.0), 100) == 100,
+              "escapeTime(-2,0) == 100 (левая граница)");
+        check(Mandelbrot2D::escapeTime(Complex(-1.0, 0.0), 100) == 100,
+              "escapeTime(-1,0) == 100 (цикл периода 2)");
+        check(Mandelbrot2D::escapeTime(Complex(0.25, 0.0), 100) == 100,
+              "escapeTime(0.25,0) == 100 (правая граница)");
+        int e43 = Mandelbrot2D::escapeTime(Complex(-2.1, 0.0), 100);
+        check(e43 >= 0 && e43 < 100,
+              "escapeTime(-2.1,0) < 100 (за границей)");
+        int e44 = Mandelbrot2D::escapeTime(Complex(1.0, 0.0), 100);
+        check(e44 >= 0 && e44 < 10,
+              "escapeTime(1,0) < 10 (быстрый выход)");
+    }
+
+    // --- Config::loadFractal: отсутствующий файл ---
+    {
+        using core::fractal::FractalParams;
+        using core::fractal::FractalType;
+        using utils::Config;
+        FractalParams before;
+        before.type = FractalType::Mandelbrot2D;
+        before.iterations = 100;
+        FractalParams after = before;
+        bool loaded = Config::loadFractal("nonexistent_file.json", after);
+        check(!loaded && after == before,
+              "Config::loadFractal(несуществующий файл) == false, параметры не изменены");
+    }
+
     std::cout << "\n=== Итог: " << failures << " ошибок ===\n";
     return failures == 0 ? 0 : 1;
 }

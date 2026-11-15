@@ -101,7 +101,7 @@ void ControlPanel::draw() {
 
 void ControlPanel::drawFractalSection() {
     FractalParams& p = *params_;
-
+    ImGui::SetWindowFontScale(1.25f);
     // --- тип фрактала ---
     if (ImGui::CollapsingHeader("Тип фрактала", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (ImGui::Combo("Тип", &typeIndex_, kTypeNames, 6)) {
@@ -149,27 +149,27 @@ void ControlPanel::drawFractalSection() {
             }
             // Обновляем минимальный zoom при изменении высоты рельефа
             camera_->setZoomLimits(p.terrainAmplitude * 1.2f, 100.0f);
-            ImGui::SliderFloat("Масштаб шума", &p.terrainFrequency, 0.03f, 0.5f, "%.2f");
+            ImGui::SliderFloat("Частота холмов", &p.terrainFrequency, 0.03f, 0.5f, "%.2f");
         }
         if (ImGui::CollapsingHeader("Атмосфера и лес", ImGuiTreeNodeFlags_DefaultOpen)) {
             //ImGui::SliderFloat("Облачность", &p.cloudDensity, 0.0f, 1.5f, "%.2f");
-            ImGui::SliderFloat("Плотность тумана", &p.fogDensity, 0.001f, 0.02f, "%.4f");
-            ImGui::SliderFloat("Плотность леса", &p.treeDensity, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Густота тумана", &p.fogDensity, 0.001f, 0.02f, "%.4f");
+            ImGui::SliderFloat("Густота леса", &p.treeDensity, 0.0f, 1.0f, "%.2f");
             ImGui::SliderFloat("Время суток", &p.timeOfDay, 0.0f, 1.0f, "%.2f");
         }
         ImGui::PopItemWidth();
     } else if (p.type == FractalType::Coast3D) {
         ImGui::PushItemWidth(200.0f);
         if (ImGui::CollapsingHeader("Берег", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SliderInt("Итерации берега", &p.iterations, 16, 512);
+            ImGui::SliderInt("Неровность берега", &p.iterations, 16, 512);
             // берег = граница Мандельброта: центр выбирается в параметре ниже
             const float previousCenterRe = p.coastCenterRe;
             const float previousCenterIm = p.coastCenterIm;
             const float previousZoom = p.m2dZoom;
             const float previousAmplitude = p.terrainAmplitude;
-            ImGui::SliderFloat("Долгота центра", &p.coastCenterRe, -2.0f, 1.0f, "%.5f");
-            ImGui::SliderFloat("Широта центра", &p.coastCenterIm, -1.2f, 1.2f, "%.5f");
-            ImGui::SliderFloat("Масштаб берега", &p.m2dZoom, 0.05f, 40.0f, "%.1f");
+            ImGui::SliderFloat("Долгота", &p.coastCenterRe, -2.0f, 1.0f, "%.5f");
+            ImGui::SliderFloat("Широта", &p.coastCenterIm, -1.2f, 1.2f, "%.5f");
+            ImGui::SliderFloat("Размер области", &p.m2dZoom, 0.05f, 40.0f, "%.1f");
             ImGui::SliderFloat("Высота суши", &p.terrainAmplitude, 1.0f, 20.0f, "%.1f");
             if (p.coastCenterRe != previousCenterRe || p.coastCenterIm != previousCenterIm ||
                 p.m2dZoom != previousZoom || p.terrainAmplitude != previousAmplitude) {
@@ -184,15 +184,15 @@ void ControlPanel::drawFractalSection() {
     } else {
         if (ImGui::CollapsingHeader("Геометрия", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::SliderInt("Итерации", &p.iterations, 16, 512);
-            ImGui::SliderFloat("Радиус сходимости", &p.bailout, 1.2f, 8.0f, "%.2f");
+            ImGui::SliderFloat("Граница", &p.bailout, 1.2f, 8.0f, "%.2f");
 
             if (p.type == FractalType::Mandelbulb3D || p.type == FractalType::Julia3D) {
                 ImGui::SliderFloat("Степень", &p.power, 2.0f, 32.0f, "%.1f");
             }
             if (p.type == FractalType::Julia3D) {
-                ImGui::SliderFloat("Re(c)", &p.juliaReal, -2.0f, 2.0f, "%.4f");
-                ImGui::SliderFloat("Im(c)", &p.juliaImag, -2.0f, 2.0f, "%.4f");
-                ImGui::SliderFloat("Im3(c)", &p.juliaImag3D, -2.0f, 2.0f, "%.4f");
+                ImGui::SliderFloat("Форма X", &p.juliaReal, -2.0f, 2.0f, "%.4f");
+                ImGui::SliderFloat("Форма Y", &p.juliaImag, -2.0f, 2.0f, "%.4f");
+                ImGui::SliderFloat("Форма Z", &p.juliaImag3D, -2.0f, 2.0f, "%.4f");
             }
             if (p.type == FractalType::Mandelbrot2D) {
                 ImGui::SliderFloat("Масштаб", &p.m2dZoom, 0.01f, 30.0f, "%.2f");
@@ -223,7 +223,7 @@ void ControlPanel::drawFractalSection() {
     // --- разрешение рендера ---
     if (renderScale_) {
         if (ImGui::CollapsingHeader("Разрешение", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SliderFloat("Разрешение рендера", renderScale_, 0.25f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Разрешение\nрендера", renderScale_, 0.25f, 1.0f, "%.2f");
         }
     }
 
@@ -271,6 +271,7 @@ void ControlPanel::drawFractalSection() {
             loadPresetsIntoList();
         }
     }
+ImGui::SetWindowFontScale(1.0f);
 }
 
 } // namespace ars::gui
