@@ -7,8 +7,6 @@
 #include <glm/glm.hpp>
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <string>
 
 namespace ars::gui {
 
@@ -84,21 +82,6 @@ void Viewport::draw() {
                      imgSize, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
         ImGui::SetCursorScreenPos(p0);
     }
-
-    // --- оверлей ---
-    const ImVec2 winPos = ImGui::GetWindowPos();
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    const ImU32 col = IM_COL32(255, 255, 255, 210);
-
-    const std::string fps = "FPS: " + std::to_string(static_cast<int>(io.Framerate));
-    dl->AddText(ImVec2(winPos.x + 12, winPos.y + 12), col, fps.c_str());
-
-    const glm::vec3 pos = renderer_->camera().position();
-    char posBuf[64];
-    std::snprintf(posBuf, sizeof(posBuf), "Pos: %.1f %.1f %.1f",
-                  static_cast<double>(pos.x), static_cast<double>(pos.y),
-                  static_cast<double>(pos.z));
-    dl->AddText(ImVec2(winPos.x + 12, winPos.y + 30), col, posBuf);
 
     ImGui::End();
 }

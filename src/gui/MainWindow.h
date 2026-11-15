@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "core/fractal/Fractal.h"
+#include "gui/ControlPanel.h"   // ControlPanel + AdaptiveSettings
 
 #include <glm/glm.hpp>
 
@@ -17,7 +18,6 @@ class Window;
 
 namespace ars::gui {
 
-class ControlPanel;
 class Viewport;
 
 /**
@@ -43,6 +43,9 @@ public:
     bool renderScreenshot(std::vector<std::uint8_t>& pixels,
                           int& width, int& height);
 
+    /// Снимок из GUI (кнопка «Скриншот»): рендер в полном разрешении + запись PNG.
+    void saveScreenshot();
+
 private:
     void handleInput();
 
@@ -53,13 +56,15 @@ private:
     core::fractal::FractalParams params_{};
     float renderScale_ = 1.0f;
 
+    // настройки адаптивного разрешения (редактируются на вкладке «Рендер»)
+    AdaptiveSettings adaptive_;
+
     // адаптивное разрешение: пока сцена движется, рендерим в пониженном
     // разрешении (FPS при вращении/драге), при остановке — полное качество.
     // Масштаб подстраивается под целевое время кадра (см. runFrame).
     uint64_t lastCameraRev_ = 0;
     core::fractal::FractalParams lastParams_{};
     float motionScale_ = 0.0f;  // 0 = не инициализирован (сброшен в статике)
-    double fpsAccumSec_ = 0.0;
     double lastTitleUpdate_ = 0.0;
     float frameMs_ = 0.0f;  // EMA чистого времени рендера FBO (без vsync)
 };

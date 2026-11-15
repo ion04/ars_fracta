@@ -1,9 +1,11 @@
 #include "gui/MainWindow.h"
 #include "gui/ControlPanel.h"
 #include "gui/Layout.h"
+#include "gui/UiKit.h"
 #include "gui/Viewport.h"
 #include "render/Renderer.h"
 #include "render/Window.h"
+#include "utils/ImageLoader.h"
 #include "utils/Logger.h"
 
 #include <imgui.h>
@@ -16,7 +18,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <ctime>
 #include <iostream>
+#include <string>
 
 namespace ars::gui {
 
@@ -53,6 +57,33 @@ bool MainWindow::renderScreenshot(std::vector<std::uint8_t>& pixels,
     return true;
 }
 
+void MainWindow::saveScreenshot() {
+    std::vector<std::uint8_t> pixels;
+    int width = 0;
+    int height = 0;
+    if (!renderScreenshot(pixels, width, height)) {
+        utils::Logger::instance().error("Скриншот: не удалось отрисовать кадр");
+        return;
+    }
+
+    char stamp[32] = "";
+    const std::time_t now = std::time(nullptr);
+    if (const std::tm* tm = std::localtime(&now))
+        std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", tm);
+    const std::string path = std::string("screenshot_") + stamp + ".png";
+
+    utils::Image image;
+    image.width = width;
+    image.height = height;
+    image.channels = 4;
+    image.data = std::move(pixels);
+    if (!utils::ImageLoader::savePng(path, image)) {
+        utils::Logger::instance().error("Скриншот: не удалось сохранить " + path);
+        return;
+    }
+    utils::Logger::instance().info("Скриншот сохранён: " + path);
+}
+
 MainWindow::~MainWindow() {
     if (ImGui::GetCurrentContext()) {
         ImGui_ImplOpenGL3_Shutdown();
@@ -73,30 +104,15 @@ bool MainWindow::init() {
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr; // не создавать imgui.ini
 
-    // ImGui-шрифт по умолчанию не содержит кириллицы => загружаем системный
-    // шрифт с кириллицей (Windows), при неудаче остаётся шрифт по умолчанию.
-    {
-        const char* kFallbackFonts[] = {
-            "C:/Windows/Fonts/segoeui.ttf",
-            "C:/Windows/Fonts/arial.ttf",
-            "C:/Windows/Fonts/tahoma.ttf",
-            "C:/Windows/Fonts/consola.ttf",
-        };
-        ImFontConfig cfg;
-        cfg.SizePixels = 16.0f;
-        const ImWchar* ranges = io.Fonts->GetGlyphRangesCyrillic();
-        for (const char* path : kFallbackFonts) {
-            ImFont* f = io.Fonts->AddFontFromFileTTF(path, cfg.SizePixels, &cfg, ranges);
-            if (f) break;
-        }
-    }
-
-    ImGui::StyleColorsDark();
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 4.0f;
-    style.FrameRounding = 3.0f;
-    style.GrabRounding = 2.0f;
-    style.FramePadding = ImVec2(6, 4);
+    // Шрифт с кириллицей: сначала комплектный Inter, затем системные.
+    const std::string bundledFont =
+        std::string(ARS_FRACTA_ASSETS_DIR) + "/fonts/Inter-Regular.ttf";
+    ui::loadFont({bundledFont.c_str(),
+                  "C:/Windows/Fonts/segoeui.ttf",
+                  "C:/Windows/Fonts/arial.ttf",
+                  "C:/Windows/Fonts/tahoma.ttf",
+                  "C:/Windows/Fonts/consola.ttf"});
+    ui::applyTheme();
 
     if (!ImGui_ImplGlfw_InitForOpenGL(window_->handle(), true)) {
         std::cerr << "[MainWindow] ImGui_ImplGlfw_InitForOpenGL failed\n";
@@ -108,7 +124,8 @@ bool MainWindow::init() {
     }
 
     controlPanel_ = std::make_unique<ControlPanel>(params_, renderer_->camera(),
-                                                    &renderScale_);
+                                                    &renderScale_, &adaptive_);
+    controlPanel_->setScreenshotCallback([this] { saveScreenshot(); });
     viewport_ = std::make_unique<Viewport>(*renderer_, params_);
 
     utils::Logger::instance().info("Приложение инициализировано");
@@ -137,13 +154,16 @@ void MainWindow::runFrame(float deltaTime) {
 
     // Адаптивное разрешение применяется как для интерактивного движения,
     // так и для фоновой анимации (разные целевые времена кадра).
-    const bool needsAdaptiveScale = userInteraction || animatedScene;
+    const bool needsAdaptiveScale =
+        adaptive_.enabled && (userInteraction || animatedScene);
     float effectiveScale = renderScale_;
     if (needsAdaptiveScale) {
-        // Интерактивное движение: 20-23 мс (45+ FPS).
-        // Фоновая анимация: 30-35 мс (30+ FPS).
-        const float kLowerMs = userInteraction ? 20.0f : 30.0f;
-        const float kUpperMs = userInteraction ? 23.0f : 35.0f;
+        // Интерактивное движение: целевой FPS из настроек.
+        // Фоновая анимация: не ниже ~30 FPS.
+        const float targetMs = 1000.0f / static_cast<float>(
+                                              std::max(adaptive_.targetFps, 1));
+        const float kLowerMs = userInteraction ? targetMs : 30.0f;
+        const float kUpperMs = userInteraction ? targetMs * 1.15f : 35.0f;
 
         if (motionScale_ <= 0.0f) {
             const int winW = renderer_->width() > 0 ? renderer_->width()
@@ -169,6 +189,7 @@ void MainWindow::runFrame(float deltaTime) {
         motionScale_ = 0.0f;
         renderer_->setRenderScale(renderScale_);
     }
+    controlPanel_->setEffectiveScale(effectiveScale);
 
     // --- рендер фрактала в offscreen FBO ---
     // Измеряем ЧИСТОЕ время рендера (glFinish до swap), без влияния vsync,
@@ -223,7 +244,6 @@ void MainWindow::runFrame(float deltaTime) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     // FPS в заголовке окна (обновляем ~2 раза в секунду)
-    fpsAccumSec_ += deltaTime;
     const double now = glfwGetTime();
     if (now - lastTitleUpdate_ > 0.5) {
         char title[128];
