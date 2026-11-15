@@ -3,9 +3,38 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include <array>
 #include <iostream>
+#include <vector>
+
+#include "utils/ImageLoader.h"
 
 namespace ars::render {
+
+namespace {
+
+void applyWindowIcon(GLFWwindow* window) {
+    constexpr std::size_t kIconCount = 4;
+    const std::array<const char*, kIconCount> files = {
+        ARS_FRACTA_ASSETS_DIR "/icon/icon_16.png",
+        ARS_FRACTA_ASSETS_DIR "/icon/icon_32.png",
+        ARS_FRACTA_ASSETS_DIR "/icon/icon_48.png",
+        ARS_FRACTA_ASSETS_DIR "/icon/icon_256.png",
+    };
+    std::array<utils::Image, kIconCount> images;
+    std::vector<GLFWimage> glfwImages;
+    glfwImages.reserve(kIconCount);
+    for (std::size_t i = 0; i < kIconCount; ++i) {
+        if (!utils::ImageLoader::loadPng(files[i], images[i])) continue;
+        glfwImages.push_back(GLFWimage{
+            images[i].width, images[i].height, images[i].data.data()});
+    }
+    if (!glfwImages.empty())
+        glfwSetWindowIcon(window, static_cast<int>(glfwImages.size()),
+                          glfwImages.data());
+}
+
+} // namespace
 
 Window::Window() : Window(Settings{}) {}
 
@@ -33,6 +62,8 @@ bool Window::init() {
         std::cerr << "[Window] Cannot create GLFW window\n";
         return false;
     }
+
+    applyWindowIcon(window_);
 
     glfwMakeContextCurrent(window_);
     glfwSwapInterval(settings_.vsync ? 1 : 0);

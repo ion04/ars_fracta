@@ -18,9 +18,15 @@ inline ImFont* headingFont = nullptr;
 //  Если ни один файл не открылся — встроенный шрифт ImGui (без кириллицы).
 // ---------------------------------------------------------------------------
 inline void loadFont(std::initializer_list<const char*> ttfPaths,
-                     float sizePx = 16.0f, float headingPx = 22.0f) {
+                     float sizePx = 16.0f, float headingPx = 22.0f,
+                     float dpiScale = 1.0f) {
+    // Сбрасываем указатель, чтобы повторный вызов (hot-reload шрифтов) не
+    // оставил headingFont указывающим на старый шрифт.
+    headingFont = nullptr;
     ImGuiIO& io = ImGui::GetIO();
     const ImWchar* ranges = io.Fonts->GetGlyphRangesCyrillic();
+    const float sizePxScaled = sizePx * dpiScale;
+    const float headingPxScaled = headingPx * dpiScale;
     for (const char* path : ttfPaths) {
         if (!path) continue;
         // ImGui падает на отсутствующем файле, поэтому проверяем заранее.
@@ -32,11 +38,11 @@ inline void loadFont(std::initializer_list<const char*> ttfPaths,
         cfg.OversampleH = 2;
         cfg.PixelSnapH = true;
         // Первый добавленный шрифт становится шрифтом по умолчанию.
-        if (io.Fonts->AddFontFromFileTTF(path, sizePx, &cfg, ranges)) {
+        if (io.Fonts->AddFontFromFileTTF(path, sizePxScaled, &cfg, ranges)) {
             ImFontConfig cfgHead;
             cfgHead.OversampleH = 2;
             cfgHead.PixelSnapH = true;
-            headingFont = io.Fonts->AddFontFromFileTTF(path, headingPx, &cfgHead, ranges);
+            headingFont = io.Fonts->AddFontFromFileTTF(path, headingPxScaled, &cfgHead, ranges);
             return;
         }
     }
@@ -45,7 +51,11 @@ inline void loadFont(std::initializer_list<const char*> ttfPaths,
 
 // ---------------------------------------------------------------------------
 //  Тема: один акцентный цвет, скругления, нормальные отступы.
-//  dpiScale — коэффициент масштаба окна (1.0 для 96 DPI).
+//  dpiScale — коэффициент масштаба окна (1.0 для 96 DPI). Чтобы шрифт не
+//  «отставал» от отступов, передавайте тот же dpiScale в loadFont(...).
+//  ВАЖНО: при dpiScale != 1.0 нужно так же масштабировать Layout.h
+//  (kPanelWidth/kStatusBarHeight), иначе панель окажется узкой под крупный
+//  шрифт. Сейчас приложение работает с dpiScale = 1.0.
 // ---------------------------------------------------------------------------
 inline void applyTheme(float dpiScale = 1.0f) {
     ImGuiStyle& s = ImGui::GetStyle();
@@ -128,7 +138,7 @@ inline void heading(const char* text) {
 // Ctrl+клик — ввод числа; двойной клик или ПКМ — сброс к значению def.
 inline bool sliderFloat(const char* label, float* v, float lo, float hi,
                         float def, const char* fmt = "%.2f",
-                        bool logarithmic = false, const char* hint = nullptr) {
+                        bool logarithmic = false) {
     ImGui::PushID(label);
     ImGui::TextUnformatted(label);
     ImGui::SetNextItemWidth(-FLT_MIN);
@@ -141,26 +151,71 @@ inline bool sliderFloat(const char* label, float* v, float lo, float hi,
         *v = def;
         changed = true;
     }
-    tip(hint);
     ImGui::PopID();
     return changed;
 }
 
 inline bool sliderInt(const char* label, int* v, int lo, int hi, int def,
-                      bool logarithmic = false, const char* hint = nullptr) {
+                      bool logarithmic = false, const char* fmt = "%d") {
     ImGui::PushID(label);
     ImGui::TextUnformatted(label);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
     if (logarithmic) flags |= ImGuiSliderFlags_Logarithmic;
-    bool changed = ImGui::SliderInt("##v", v, lo, hi, "%d", flags);
+    bool changed = ImGui::SliderInt("##v", v, lo, hi, fmt, flags);
     if (ImGui::IsItemHovered() &&
         (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) ||
          ImGui::IsMouseClicked(ImGuiMouseButton_Right))) {
         *v = def;
         changed = true;
     }
-    tip(hint);
+    ImGui::PopID();
+    return changed;
+}
+
+// Слайдер доли: значение хранится как 0..1 (или 0..1.5), но показывается в %.
+inline bool sliderPercent(const char* label, float* v, float lo, float hi,
+                          float def) {
+    ImGui::PushID(label);
+    ImGui::TextUnformatted(label);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    float pct = *v * 100.0f;
+    bool changed = ImGui::SliderFloat("##v", &pct, lo * 100.0f, hi * 100.0f,
+                                      "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+    if (changed) *v = pct / 100.0f;
+    if (ImGui::IsItemHovered() &&
+        (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) ||
+         ImGui::IsMouseClicked(ImGuiMouseButton_Right))) {
+        *v = def;
+        changed = true;
+    }
+    ImGui::PopID();
+    return changed;
+}
+
+// Слайдер «время суток»: значение хранится как доля суток 0..1, но
+// отображается как часы:минуты (00:00–23:59) по 24-часовой шкале.
+inline bool timeOfDay(const char* label, float* v, float def) {
+    ImGui::PushID(label);
+    ImGui::TextUnformatted(label);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    float hours = *v * 24.0f;
+    const int totalMin = static_cast<int>(hours * 60.0f + 0.5f) % (24 * 60);
+    char shown[16];
+    std::snprintf(shown, sizeof shown, "%02d:%02d", totalMin / 60, totalMin % 60);
+    // Формат без '%' — ImGui выводит строку как есть (часы:минуты).
+    bool changed = ImGui::SliderFloat("##v", &hours, 0.0f, 24.0f, shown,
+                                      ImGuiSliderFlags_AlwaysClamp);
+    if (changed) {
+        *v = hours / 24.0f;
+        if (*v >= 1.0f) *v = 1.0f;  // 24:00 ≡ 00:00
+    }
+    if (ImGui::IsItemHovered() &&
+        (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) ||
+         ImGui::IsMouseClicked(ImGuiMouseButton_Right))) {
+        *v = def;
+        changed = true;
+    }
     ImGui::PopID();
     return changed;
 }

@@ -128,7 +128,7 @@ if(ARS_FRACTA_BUILD_GUI)
         src/render/Renderer.cpp
         src/render/Window.cpp)
     target_include_directories(ars_render PUBLIC src)
-    target_link_libraries(ars_render PUBLIC ars_core glad glfw OpenGL::GL glm::glm)
+    target_link_libraries(ars_render PUBLIC ars_core ars_utils glad glfw OpenGL::GL glm::glm)
     target_compile_definitions(ars_render PUBLIC ARS_FRACTA_ASSETS_DIR="${ARS_FRACTA_ASSETS_DIR}")
 
     # --- gui: ImGui user interface -------------------------------------------

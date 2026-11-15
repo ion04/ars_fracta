@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <limits>
 
 namespace ars::render {
@@ -42,6 +43,9 @@ public:
     void setView(const glm::vec3& eye, const glm::vec3& aim);
     void setFov(float fovDeg);
     void setZoomLimits(float minDist, float maxDist);
+
+    /// Вид сверху на начало координат с заданной высоты (без вырожденного lookAt).
+    void topView(float height);
 
     /// Минимальная высота камеры (по Y) при интерактивной навигации.
     /// По умолчанию отключено (-inf) — свободная орбита для 3D-фракталов.
@@ -88,5 +92,30 @@ private:
     float smoothZoomDelta_ = 0.0f;
     static constexpr float kSmoothingAlpha = 0.2f;
 };
+
+// ---------------------------------------------------------------------------
+//  Стартовые виды для «пейзажа»/«побережья».
+//  Коэффициенты 1.45/1.55 — эмпирический запас камеры над рельефом, чтобы
+//  стартовый вид не оказался под горами при разной амплитуде.
+// ---------------------------------------------------------------------------
+constexpr float kTerrainEyeMinY = 7.0f;
+constexpr float kCoastEyeMinY   = 9.0f;
+constexpr float kTerrainEyeFactor = 1.45f;
+constexpr float kCoastEyeFactor   = 1.55f;
+constexpr float kLandscapeFov = 52.0f;
+
+inline void placeTerrainCamera(Camera& cam,
+                               const core::fractal::FractalParams& p) {
+    const float eyeY = std::max(kTerrainEyeMinY, p.terrainAmplitude * kTerrainEyeFactor);
+    cam.setView(glm::vec3(10.0f, eyeY, -20.0f), glm::vec3(-1.5f, 2.2f, 10.0f));
+    cam.setFov(kLandscapeFov);
+}
+
+inline void placeCoastCamera(Camera& cam,
+                             const core::fractal::FractalParams& p) {
+    const float eyeY = std::max(kCoastEyeMinY, p.terrainAmplitude * kCoastEyeFactor);
+    cam.setView(glm::vec3(0.0f, eyeY, -22.0f), glm::vec3(0.0f, 1.0f, 7.0f));
+    cam.setFov(kLandscapeFov);
+}
 
 } // namespace ars::render

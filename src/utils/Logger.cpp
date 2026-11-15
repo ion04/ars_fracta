@@ -7,6 +7,16 @@
 
 namespace ars::utils {
 
+static std::tm safe_localtime(const std::time_t* t) {
+    std::tm tm{};
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
+    localtime_s(&tm, t);
+#else
+    localtime_r(t, &tm);
+#endif
+    return tm;
+}
+
 Logger& Logger::instance() {
     static Logger inst;
     return inst;
@@ -26,7 +36,8 @@ void Logger::write(const std::string& level, const std::string& msg) {
     char timeBuf[32];
     const auto now = std::chrono::system_clock::now();
     const std::time_t tt = std::chrono::system_clock::to_time_t(now);
-    std::strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", std::localtime(&tt));
+    const std::tm tm = safe_localtime(&tt);
+    std::strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &tm);
 
     std::ostringstream os;
     os << timeBuf << ' ' << level << ' ' << msg;

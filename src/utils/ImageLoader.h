@@ -21,7 +21,10 @@ struct Image {
  */
 class ImageLoader {
 public:
-    /// Сохранение в PNG.
+    /// Загрузить изображение из PNG в RGBA8 (4 канала).
+    static bool loadPng(const std::string& path, Image& img);
+
+    /// Сохранить изображение в PNG.
     static bool savePng(const std::string& path, const Image& img);
 };
 

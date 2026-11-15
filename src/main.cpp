@@ -1,7 +1,5 @@
 #include <GLFW/glfw3.h>
 
-#include <glm/glm.hpp>
-
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -66,20 +64,8 @@ int main(int argc, char** argv) {
     gui::MainWindow app(window);
     app.setParams(config.fractal);
     if (!app.init()) return 1;
-    // вид по умолчанию для пейзажа: камера над рельефом, смотрит на горизонт
-    if (config.fractal.type == core::fractal::FractalType::Terrain3D) {
-        // высота камеры зависит от амплитуды рельефа, чтобы не оказаться под горами
-        const float eyeY = std::max(7.0f, config.fractal.terrainAmplitude * 1.45f);
-        const glm::vec3 eye(10.0f, eyeY, -20.0f);
-        app.setCameraView(eye, glm::vec3(-1.5f, 2.2f, 10.0f));
-        app.setCameraFov(52.0f);
-    } else if (config.fractal.type == core::fractal::FractalType::Coast3D) {
-        // центр побережья лежит в начале координат (coastCenter == (0, 0))
-        const float eyeY = std::max(9.0f, config.fractal.terrainAmplitude * 1.55f);
-        const glm::vec3 target(0.0f, 1.0f, 7.0f);
-        app.setCameraView(glm::vec3(0.0f, eyeY, -22.0f), target);
-        app.setCameraFov(52.0f);
-    }
+    // стартовая камера по типу (пейзаж/побережье); коэффициенты — в render/Camera.h
+    app.applyDefaultCamera();
 
     if (screenshot) {
         std::vector<std::uint8_t> pixels;

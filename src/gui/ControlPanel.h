@@ -68,12 +68,16 @@ private:
     float effectiveScale_ = 1.0f;
 
     // пресеты
-    std::vector<std::string> presetFiles_;
-    std::vector<std::string> presetLabels_;
-    std::vector<core::fractal::FractalType> presetTypes_;
+    struct PresetEntry {
+        std::string label;
+        std::string file;
+        core::fractal::FractalType type = core::fractal::FractalType::Mandelbrot2D;
+    };
+    std::vector<PresetEntry> presets_;
     int  presetIndex_ = -1;
     bool presetsLoaded_ = false;
     bool presetActive_ = false;                 // параметры были взяты из пресета
+    bool saveError_ = false;                    // последняя попытка save-as не удалась
     core::fractal::FractalParams presetSnapshot_;
     char nameBuf_[64] = "";
 };

@@ -40,7 +40,7 @@ double MengerSponge::distanceEstimate(const math::Vector3& p, int iterations) {
 FractalParams MengerSponge::sanitize(const FractalParams& p) const {
     FractalParams out = p;
     out.type = FractalType::MengerSponge;
-    out.iterations = std::clamp(p.iterations, 1, 16);
+    out.iterations = std::clamp(p.iterations, 1, 12);
     out.power = 0.0f;
     return out;
 }

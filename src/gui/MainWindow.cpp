@@ -3,6 +3,7 @@
 #include "gui/Layout.h"
 #include "gui/UiKit.h"
 #include "gui/Viewport.h"
+#include "render/Camera.h"
 #include "render/Renderer.h"
 #include "render/Window.h"
 #include "utils/ImageLoader.h"
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <ctime>
 #include <iostream>
@@ -35,12 +37,12 @@ static bool isAutoRotateSupported(core::fractal::FractalType type) {
 
 MainWindow::MainWindow(render::Window& window) : window_(&window) {}
 
-void MainWindow::setCameraView(const glm::vec3& eye, const glm::vec3& aim) {
-    if (renderer_) renderer_->camera().setView(eye, aim);
-}
-
-void MainWindow::setCameraFov(float fovDeg) {
-    if (renderer_) renderer_->camera().setFov(fovDeg);
+void MainWindow::applyDefaultCamera() {
+    if (!renderer_) return;
+    if (params_.type == core::fractal::FractalType::Terrain3D)
+        render::placeTerrainCamera(renderer_->camera(), params_);
+    else if (params_.type == core::fractal::FractalType::Coast3D)
+        render::placeCoastCamera(renderer_->camera(), params_);
 }
 
 bool MainWindow::renderScreenshot(std::vector<std::uint8_t>& pixels,
@@ -86,8 +88,9 @@ void MainWindow::saveScreenshot() {
 
 MainWindow::~MainWindow() {
     if (ImGui::GetCurrentContext()) {
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
+        // Порядок обратный инициализации; только реально поднятые бэкенды.
+        if (gl3Inited_) ImGui_ImplOpenGL3_Shutdown();
+        if (glfwInited_) ImGui_ImplGlfw_Shutdown();
         ImGui::DestroyContext();
     }
 }
@@ -118,22 +121,33 @@ bool MainWindow::init() {
         std::cerr << "[MainWindow] ImGui_ImplGlfw_InitForOpenGL failed\n";
         return false;
     }
+    glfwInited_ = true;
     if (!ImGui_ImplOpenGL3_Init("#version 330 core")) {
         std::cerr << "[MainWindow] ImGui_ImplOpenGL3_Init failed\n";
         return false;
     }
+    gl3Inited_ = true;
 
     controlPanel_ = std::make_unique<ControlPanel>(params_, renderer_->camera(),
                                                     &renderScale_, &adaptive_);
     controlPanel_->setScreenshotCallback([this] { saveScreenshot(); });
     viewport_ = std::make_unique<Viewport>(*renderer_, params_);
 
+    startTime_ = glfwGetTime();
+    glfwSetWindowTitle(window_->handle(), "Ars Fracta");
     utils::Logger::instance().info("Приложение инициализировано");
     return true;
 }
 
 void MainWindow::runFrame(float deltaTime) {
-    handleInput();
+    // ImGui-кадр открываем первым: WantCaptureKeyboard вычисляется в
+    // ImGui::NewFrame, и handleInput() должен видеть актуальное значение,
+    // а не состояние предыдущего кадра.
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    handleInput(deltaTime);
 
     // --- автовращение ---
     if (params_.autoRotate && isAutoRotateSupported(params_.type)) {
@@ -181,7 +195,9 @@ void MainWindow::runFrame(float deltaTime) {
             const float ratio = std::sqrt(kUpperMs / std::max(frameMs_, 1.0f));
             motionScale_ *= std::max(0.85f, std::min(0.98f, ratio));
         } else if (frameMs_ > 0.0f && frameMs_ < kLowerMs) {
-            motionScale_ *= 1.05f;
+            // Верхний предел — renderScale_: иначе при долгой быстрой анимации
+            // motionScale_ уползает вверх и потом долго спускается.
+            motionScale_ = std::min(renderScale_, motionScale_ * 1.05f);
         }
         effectiveScale = std::max(0.125f, std::min(renderScale_, motionScale_));
         renderer_->setRenderScale(effectiveScale);
@@ -194,7 +210,8 @@ void MainWindow::runFrame(float deltaTime) {
     // --- рендер фрактала в offscreen FBO ---
     // Измеряем ЧИСТОЕ время рендера (glFinish до swap), без влияния vsync,
     // чтобы автоподбор масштаба не осциллировал от ожидания обновления.
-    const float t = static_cast<float>(glfwGetTime());
+    // Время сцены считаем от старта: так float-точность не деградирует.
+    const float t = static_cast<float>(glfwGetTime() - startTime_);
     std::chrono::steady_clock::time_point renderStart;
     if (needsAdaptiveScale) renderStart = std::chrono::steady_clock::now();
 
@@ -210,11 +227,6 @@ void MainWindow::runFrame(float deltaTime) {
                                    : frameMs_ * 0.8f + static_cast<float>(ms) * 0.2f;
     }
 
-    // --- ImGui ---
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-
     controlPanel_->draw();
     viewport_->draw();
 
@@ -229,9 +241,10 @@ void MainWindow::runFrame(float deltaTime) {
                          ImGuiWindowFlags_NoScrollWithMouse |
                          ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
         ImGui::PopStyleVar();
-        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::Text("FPS: %.0f  ·  frame: %.1f ms",
+                    io.Framerate, frameMs_);
         ImGui::SameLine();
-        ImGui::Separator();
+        ImGui::TextDisabled("|");
         ImGui::SameLine();
         const auto& entries = utils::Logger::instance().entries();
         if (!entries.empty()) {
@@ -242,27 +255,14 @@ void MainWindow::runFrame(float deltaTime) {
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-    // FPS в заголовке окна (обновляем ~2 раза в секунду)
-    const double now = glfwGetTime();
-    if (now - lastTitleUpdate_ > 0.5) {
-        char title[128];
-        std::snprintf(title, sizeof(title),
-                      "ars_fracta — FPS: %.0f, frame: %.1f ms, bufsz %dx%d, res x%.2f",
-                      static_cast<double>(ImGui::GetIO().Framerate),
-                      static_cast<double>(frameMs_),
-                      renderer_->width(), renderer_->height(),
-                      static_cast<double>(renderer_->renderScale()));
-        glfwSetWindowTitle(window_->handle(), title);
-        lastTitleUpdate_ = now;
-    }
 }
 
-void MainWindow::handleInput() {
+void MainWindow::handleInput(float deltaTime) {
     GLFWwindow* w = window_->handle();
     if (ImGui::GetIO().WantCaptureKeyboard) return;
 
-    const float speed = 0.05f;
+    // Единицы в секунду → не зависим от FPS (3 ед./с при любой частоте).
+    const float speed = 3.0f * deltaTime;
     if (glfwGetKey(w, GLFW_KEY_W) == GLFW_PRESS) renderer_->camera().moveForward(speed);
     if (glfwGetKey(w, GLFW_KEY_S) == GLFW_PRESS) renderer_->camera().moveForward(-speed);
     if (glfwGetKey(w, GLFW_KEY_A) == GLFW_PRESS) renderer_->camera().moveRight(-speed);

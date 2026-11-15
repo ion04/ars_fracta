@@ -115,6 +115,12 @@ void Camera::setView(const glm::vec3& eye, const glm::vec3& aim) {
     updateVectors();
 }
 
+void Camera::topView(float height) {
+    // 0.001 по Z — чтобы front/up не были строго коллинеарны worldUp.
+    const float h = std::max(height, 0.001f);
+    setView(glm::vec3(0.0f, h, 0.001f), glm::vec3(0.0f));
+}
+
 void Camera::setFov(float fovDeg) {
     fovDeg_ = fovDeg;
     ++revision_;

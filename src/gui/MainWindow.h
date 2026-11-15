@@ -7,8 +7,6 @@
 #include "core/fractal/Fractal.h"
 #include "gui/ControlPanel.h"   // ControlPanel + AdaptiveSettings
 
-#include <glm/glm.hpp>
-
 struct GLFWwindow;
 
 namespace ars::render {
@@ -34,9 +32,8 @@ public:
     const core::fractal::FractalParams& params() const { return params_; }
     void setParams(const core::fractal::FractalParams& params) { params_ = params; }
 
-    // вид по умолчанию для пейзажа (используется в main.cpp)
-    void setCameraView(const glm::vec3& eye, const glm::vec3& aim);
-    void setCameraFov(float fovDeg);
+    // стартовая камера по типу текущих параметров (пейзаж/побережье)
+    void applyDefaultCamera();
 
     /// Отрисовать один кадр в полном разрешении и прочитать пиксели
     /// (для --screenshot; без адаптивного понижения масштаба).
@@ -47,7 +44,7 @@ public:
     void saveScreenshot();
 
 private:
-    void handleInput();
+    void handleInput(float deltaTime);
 
     render::Window* window_ = nullptr;
     std::unique_ptr<render::Renderer> renderer_;
@@ -55,6 +52,11 @@ private:
     std::unique_ptr<ControlPanel> controlPanel_;
     core::fractal::FractalParams params_{};
     float renderScale_ = 1.0f;
+
+    // флаги инициализации бэкендов ImGui: Shutdown вызываем только для тех,
+    // что реально поднялись (иначе assert/UB в деструкторе).
+    bool glfwInited_ = false;
+    bool gl3Inited_ = false;
 
     // настройки адаптивного разрешения (редактируются на вкладке «Рендер»)
     AdaptiveSettings adaptive_;
@@ -65,7 +67,7 @@ private:
     uint64_t lastCameraRev_ = 0;
     core::fractal::FractalParams lastParams_{};
     float motionScale_ = 0.0f;  // 0 = не инициализирован (сброшен в статике)
-    double lastTitleUpdate_ = 0.0;
+    double startTime_ = 0.0;  // начало отсчёта времени сцены (для uTime)
     float frameMs_ = 0.0f;  // EMA чистого времени рендера FBO (без vsync)
 };
 
