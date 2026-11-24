@@ -18,7 +18,7 @@ inline ImFont* headingFont = nullptr;
 //  Если ни один файл не открылся — встроенный шрифт ImGui (без кириллицы).
 // ---------------------------------------------------------------------------
 inline void loadFont(std::initializer_list<const char*> ttfPaths,
-                     float sizePx = 16.0f, float headingPx = 22.0f,
+                     float sizePx = 18.0f, float headingPx = 26.0f,
                      float dpiScale = 1.0f) {
     // Сбрасываем указатель, чтобы повторный вызов (hot-reload шрифтов) не
     // оставил headingFont указывающим на старый шрифт.
@@ -61,13 +61,13 @@ inline void applyTheme(float dpiScale = 1.0f) {
     ImGuiStyle& s = ImGui::GetStyle();
     s = ImGuiStyle();  // сброс к умолчаниям
 
-    s.WindowPadding     = ImVec2(12, 12);
-    s.FramePadding      = ImVec2(8, 5);
-    s.ItemSpacing       = ImVec2(8, 7);
-    s.ItemInnerSpacing  = ImVec2(6, 4);
-    s.IndentSpacing     = 14.0f;
-    s.ScrollbarSize     = 12.0f;
-    s.GrabMinSize       = 14.0f;
+    s.WindowPadding     = ImVec2(14, 14);
+    s.FramePadding      = ImVec2(10, 7);
+    s.ItemSpacing       = ImVec2(10, 8);
+    s.ItemInnerSpacing  = ImVec2(8, 5);
+    s.IndentSpacing     = 16.0f;
+    s.ScrollbarSize     = 14.0f;
+    s.GrabMinSize       = 16.0f;
 
     s.WindowRounding    = 0.0f;
     s.ChildRounding     = 6.0f;
@@ -75,6 +75,8 @@ inline void applyTheme(float dpiScale = 1.0f) {
     s.PopupRounding     = 6.0f;
     s.GrabRounding      = 5.0f;
     s.ScrollbarRounding = 6.0f;
+    s.TabRounding       = 5.0f;
+    s.TabBorderSize     = 0.0f;
 
     s.WindowBorderSize  = 0.0f;
     s.FrameBorderSize   = 0.0f;
@@ -113,6 +115,11 @@ inline void applyTheme(float dpiScale = 1.0f) {
     c[ImGuiCol_ScrollbarGrabHovered] = ImVec4(1, 1, 1, 0.25f);
     c[ImGuiCol_ScrollbarGrabActive]  = accent;
     c[ImGuiCol_TextSelectedBg]       = ImVec4(accent.x, accent.y, accent.z, 0.35f);
+    c[ImGuiCol_Tab]                  = panel;
+    c[ImGuiCol_TabHovered]           = panelHover;
+    c[ImGuiCol_TabActive]            = accent;
+    c[ImGuiCol_TabUnfocused]         = panel;
+    c[ImGuiCol_TabUnfocusedActive]   = panelHover;
 
     s.ScaleAllSizes(dpiScale);
 }

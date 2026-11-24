@@ -135,6 +135,41 @@ cmake --build build-quality-werror
 - Сохранение/загрузка JSON через вкладку «Пресеты» внизу панели
 - Примеры в `assets/presets/`: `mandelbrot.json`, `landscape.json`, `coast.json`, `menger_sponge.json`
 
+## Установка (Installers)
+
+### Windows (NSIS)
+Требуется NSIS 3.x: `winget install NSIS.NSIS` или скачайте с [nsis.sourceforge.io](https://nsis.sourceforge.io/Download).
+
+```sh
+# Сборка и создание установщика
+cmake -G "MinGW Makefiles" -S . -B build-installer -DARS_FRACTA_BUILD_GUI=ON
+cmake --build build-installer --config Release --target ars_fracta
+cpack -G NSIS -C Release --config build-installer/CPackConfig.cmake
+# Результат: build-installer/ars_fracta-0.1.0-windows-x64.exe
+```
+
+Или используйте скрипт:
+```sh
+.\build_installer.bat
+# или PowerShell
+.\build_installer.ps1
+```
+
+### Linux (DEB/RPM)
+```sh
+cmake -S . -B build-installer -DARS_FRACTA_BUILD_GUI=ON
+cmake --build build-installer --config Release --target ars_fracta
+cpack -G DEB -C Release --config build-installer/CPackConfig.cmake
+cpack -G RPM -C Release --config build-installer/CPackConfig.cmake
+```
+
+### macOS (DMG)
+```sh
+cmake -S . -B build-installer -DARS_FRACTA_BUILD_GUI=ON
+cmake --build build-installer --config Release --target ars_fracta
+cpack -G DragNDrop -C Release --config build-installer/CPackConfig.cmake
+```
+
 ## Лицензия
 
 MIT — см. [LICENSE](LICENSE).

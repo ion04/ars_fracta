@@ -347,7 +347,19 @@ void ControlPanel::drawFooter() {
     FractalParams& p = *params_;
 
     if (renderScale_) {
-        ui::sliderPercent("Максимальное разрешение", renderScale_, kMinScale, 1.0f, 1.0f);
+        if (ui::headingFont) ImGui::PushFont(ui::headingFont);
+        ImGui::TextUnformatted("Максимальное разрешение");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        float pct = *renderScale_ * 100.0f;
+        ImGui::SliderFloat("##renderScale", &pct, kMinScale * 100.0f, 100.0f,
+                           "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+        if (ImGui::IsItemHovered() &&
+            (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) ||
+             ImGui::IsMouseClicked(ImGuiMouseButton_Right))) {
+            *renderScale_ = 1.0f;
+        }
+        *renderScale_ = pct / 100.0f;
+        if (ui::headingFont) ImGui::PopFont();
     }
 
     loadPresetsIntoList();
@@ -357,12 +369,16 @@ void ControlPanel::drawFooter() {
     std::string cur = "-- выбрать пресет --";
     if (hasPreset) cur = presets_[presetIndex_].label + (dirty ? " *" : "");
 
+    if (ui::headingFont) ImGui::PushFont(ui::headingFont);
     ImGui::TextUnformatted("Пресет");
+    if (ui::headingFont) ImGui::PopFont();
+
     ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ui::headingFont) ImGui::PushFont(ui::headingFont);
     if (ImGui::BeginCombo("##presets", cur.c_str())) {
         bool any = false;
         for (int i = 0; i < static_cast<int>(presets_.size()); ++i) {
-            if (presets_[i].type != p.type) continue;          // только пресеты этого типа
+            if (presets_[i].type != p.type) continue;
             any = true;
             if (ImGui::Selectable(presets_[i].label.c_str(), hasPreset && i == presetIndex_))
                 applyPreset(i);
@@ -370,18 +386,29 @@ void ControlPanel::drawFooter() {
         if (!any) ImGui::TextDisabled("Нет пресетов для этого типа");
         ImGui::EndCombo();
     }
+    if (ui::headingFont) ImGui::PopFont();
     if (dirty) ui::tip("Параметры изменены относительно пресета");
 
-    const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float w = (avail - spacing * 2.0f) / 3.0f;
+
+    if (ui::headingFont) ImGui::PushFont(ui::headingFont);
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.5f, 0.5f));
     ImGui::BeginDisabled(!dirty);
     if (ImGui::Button("Заменить", ImVec2(w, 0)) && hasPreset)
-        savePreset(presets_[presetIndex_].label);           // перезапись выбранного
+        savePreset(presets_[presetIndex_].label);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Сохранить как", ImVec2(w, 0))) {
+    if (ImGui::Button("Сохранить\n  пресет", ImVec2(w, 0))) {
         saveError_ = false;
         ImGui::OpenPopup("save_as");
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Экспорт\n  PNG", ImVec2(w, 0)) && onScreenshot_)
+        onScreenshot_();
+    ImGui::PopStyleVar();
+    if (ui::headingFont) ImGui::PopFont();
 
     if (ImGui::BeginPopup("save_as")) {
         ImGui::TextUnformatted("Название пресета");
