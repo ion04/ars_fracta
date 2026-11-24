@@ -16,6 +16,7 @@ public:
         int height = 720;
         std::string title = "Ars Fracta";
         bool vsync = true;
+        bool fullscreen = true;
         int glMajor = 3;
         int glMinor = 3;
     };

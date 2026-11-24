@@ -15,6 +15,40 @@ namespace ars::render {
 
 class Window;
 
+// ---------------------------------------------------------------------------
+//  UBO layout (std140) — must match shaders/inc/common.inc exactly
+// ---------------------------------------------------------------------------
+struct FractalParamsUBO {
+    int   uFractalType;      // 0
+    int   uIterations;       // 4
+    float uBailout;          // 8
+    float uPower;            // 12
+    glm::vec3 uJuliaC;       // 16 (aligned to 16)
+    float uDetail;           // 32
+    float uColorScale;       // 36
+    float uHueShift;         // 40
+    int   uColorMode;        // 44
+    float uM2dZoom;          // 48
+    int   uMaxSteps;         // 52
+    float uTime;             // 56
+
+    // Terrain3D
+    float uTerrainAmplitude; // 60
+    float uTerrainFrequency; // 64
+    float uCloudDensity;     // 68
+    float uTreeDensity;      // 72
+    float uTimeOfDay;        // 76
+    float uFogDensity;       // 80
+
+    // Coast3D
+    glm::vec2 uCoastCenter;  // 84 (aligned to 8)
+
+    // Total: 92 bytes, pad to 96 (multiple of 16)
+    float _pad[2];           // 92-96 (was 1, need 2 for alignment)
+};
+
+static_assert(sizeof(FractalParamsUBO) == 96, "FractalParamsUBO must be 96 bytes (std140)");
+
 /**
  * @brief Основной цикл рендеринга: рисует фрактал в offscreen-FBO (текстуру),
  * которую затем отображает Viewport (ImGui).
@@ -60,6 +94,7 @@ private:
     GLuint fbo_ = 0;
     GLuint colorTex_ = 0;
     GLuint depthRbo_ = 0;
+    GLuint ubo_ = 0;          // uniform buffer for fractal params
     int width_ = 0;
     int height_ = 0;
     float renderScale_ = 1.0f;

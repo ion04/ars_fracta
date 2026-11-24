@@ -177,11 +177,17 @@ int main() {
                   shaderText.find("renderTerrain") != std::string::npos &&
                   shaderText.find("renderCoast") != std::string::npos,
               "Terrain3D и Coast3D имеют shader-путь генерации");
-        // красная зона: плотность тумана параметризована uniform'ом, а не литералом
-        check(shaderText.find("uniform float uFogDensity;") != std::string::npos &&
-                  shaderText.find("-dist * uFogDensity") != std::string::npos &&
-                  shaderText.find("0.0055f") == std::string::npos,
-              "Шейдер читает плотность тумана из uFogDensity (литерал 0.0055 удалён)");
+
+        // Check modular shader includes
+        std::ifstream common("assets/shaders/inc/common.inc");
+        const std::string commonText((std::istreambuf_iterator<char>(common)),
+                                     std::istreambuf_iterator<char>());
+        // красная зона: плотность тумана параметризована через UBO, а не литералом
+        check(commonText.find("float uFogDensity;") != std::string::npos &&
+                  commonText.find("ubo.uFogDensity") != std::string::npos &&
+                  commonText.find("0.0055f") == std::string::npos &&
+                  commonText.find("FractalParamsUBO") != std::string::npos,
+              "Шейдер читает плотность тумана из UBO (литерал 0.0055 удалён, есть FractalParamsUBO)");
     }
 
     // --- JSON round-trip FractalParams (красная зона FractalParams <-> JSON) ---

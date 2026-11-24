@@ -9,18 +9,20 @@
 ## Возможности
 
 - **Интерактивная визуализация в реальном времени** (ray marching в фрагментном шейдере):
-  - **Mandelbrot 2D** — классическое множество Мандельброта
-  - **Mandelbulb 3D** — трёхмерная фрактальная сфера
-  - **Menger Sponge** — губка Менгера (фрактальный куб, итераций до 12)
-  - **Julia 3D** — множество Жюлиа в трёх измерениях
-  - **Terrain 3D** — процедурный пейзаж с деревьями, скалами, ambient occlusion
-  - **Coast 3D** — морское побережье вдоль границы множества Мандельброта с Gerstner waves
+  - **Мандельброт 2D** — классическое множество Мандельброта (2D escape-time)
+  - **Мандельброт 3D** — трёхмерная фрактальная сфера (Mandelbulb 3D)
+  - **Губка Менгера** — фрактальный куб (итераций до 12)
+  - **Множество Жюлиа** — множество Жюлиа в трёх измерениях
+  - **Пейзаж** — процедурный ландшафт с деревьями, скалами, ambient occlusion, облаками, туманом, циклом суток
+  - **Морское побережье** — береговая линия вдоль границы множества Мандельброта с волнами Герстнера, каустикой, пеной
 - Плавная орбитальная камера с EMA-сглаживанием и адаптивными границами
 - **Адаптивное разрешение**: 30+ FPS для анимированных сцен, 45+ FPS при интерактивном движении
-- GUI на **Dear ImGui**: панель параметров, пресеты (JSON), статусная строка
+- GUI на **Dear ImGui**: панель параметров с вкладками, пресеты (JSON), статусная строка
 - Сохранение скриншотов в PNG (stb_image), конфигурация приложения (nlohmann/json)
 - Headless-рендер: `ars_fracta.exe --screenshot out.png [preset.json]`
 - Иконка окна (16/32/48/256 PNG) и автосохранение конфига при выходе
+- **Модульная шейдерная система**: кастомный препроцессор `#include` для GLSL, Uniform Buffer Object (std140)
+- Запуск в полноэкранном режиме (primary monitor)
 
 ## Сборка
 
@@ -85,25 +87,42 @@ cmake --build build-quality-werror
 - математику фракталов (Complex, Vector3, Distance Estimation)
 - фоновые CPU-задачи с отменой и переносом исключений
 - валидацию параметров фракталов и JSON round-trip
+- проверку модульной структуры шейдеров (UBO, отсутствие hardcoded литерулов)
 
 ## Структура проекта
 
 ```
 ├── CMakeLists.txt
 ├── assets/
-│   ├── shaders/                # GLSL: fractal.vert / fractal.frag
-│   ├── presets/                # JSON-пресеты параметров фракталов
-│   ├── icon/                   # PNG-иконки окна (16/32/48/256) + .ico
-│   └── fonts/                  # Inter-Regular.ttf (кириллица)
+│   ├── shaders/
+│   │   ├── fractal.vert              # вершинный шейдер (fullscreen triangle)
+│   │   ├── fractal.frag              # главный фрагментный шейдер (entry point + #include)
+│   │   └── inc/                      # модульные включения GLSL
+│   │       ├── common.inc            # UBO FractalParamsUBO, общие утилиты, палитра, солнце, туман, облака
+│   │       ├── mandelbulb.inc        # Mandelbulb/Julia DE, sceneDE, calcNormal, shade, march
+│   │       ├── menger.inc            # Menger Sponge DE
+│   │       ├── mandelbrot2d.inc      # 2D Mandelbrot escape-time
+│   │       ├── terrain.inc           # Procedural Terrain: heightfield, trees, rocks, AO, shadows
+│   │       └── coast.inc             # Coast3D: Mandelbrot boundary, Gerstner waves, caustics, foam
+│   ├── presets/                      # JSON-пресеты параметров фракталов
+│   │   ├── mandelbrot2d.json
+│   │   ├── mandelbulb3d.json
+│   │   ├── julia3d.json
+│   │   ├── landscape.json
+│   │   ├── coast.json
+│   │   └── menger_sponge.json
+│   ├── icon/                         # PNG-иконки окна (16/32/48/256) + .ico
+│   └── fonts/                        # Inter-Regular.ttf (кириллица)
 ├── src/
 │   ├── main.cpp
 │   ├── core/
-│   │   ├── math/               # Complex, Vector3
-│   │   ├── async/              # CancellationToken и joinable CPU Job
-│   │   └── fractal/            # CPU/GLSL-фракталы и валидация
-│   ├── render/                 # Window, Shader, Camera, Renderer (OpenGL)
-│   ├── gui/                    # MainWindow, ControlPanel, Viewport (ImGui)
-│   └── utils/                  # ImageLoader, Config, Logger
+│   │   ├── math/                     # Complex, Vector3
+│   │   ├── async/                    # CancellationToken и joinable CPU Job
+│   │   └── fractal/                  # CPU/GLSL-фракталы и валидация
+│   ├── render/                       # Window, Shader, Camera, Renderer (OpenGL)
+│   │   └── Shader.cpp                # кастомный препроцессор #include для GLSL
+│   ├── gui/                          # MainWindow, ControlPanel, Viewport (ImGui)
+│   └── utils/                        # ImageLoader, Config, Logger
 └── tests/
     └── test_core.cpp
 ```
@@ -122,53 +141,29 @@ cmake --build build-quality-werror
 | Выход | ESC |
 
 ### Панель параметров (ImGui)
-- **Фрактал**: выбор типа (Mandelbrot 2D, Mandelbulb 3D, Menger Sponge, Julia 3D, Terrain 3D, Coast 3D)
-- **Геометрия**: итерации, граница (bailout), степень (для Mandelbulb/Julia), форма (Julia)
+- **Фрактал**: выбор типа (Мандельброт 2D, Мандельброт 3D, Губка Менгера, Множество Жюлиа, Пейзаж, Морское побережье)
+- **Геометрия**: итерации, граница (bailout), степень (для Мандельброт 3D/Множество Жюлиа), форма (Жюлиа)
 - **Ландшафт / Берег**: высота рельефа, частота холмов, неравномерность, масштаб области
 - **Атмосфера**: густота тумана, облачность (%), густота леса (%), время суток (24ч)
-- **Цвет**: масштаб палитры, сдвиг цвета (об.), палитра
+- **Цвет** (только для 3D-фракталов): масштаб палитры, сдвиг цвета (об.), палитра
 - **Камера**: позиция, сброс, вид сверху, автовращение
 - **Рендер**: адаптивное разрешение, целевой FPS при движении
 - **Статус-бар** (внизу): FPS, время кадра (ms)
 
 ### Пресеты
 - Сохранение/загрузка JSON через вкладку «Пресеты» внизу панели
-- Примеры в `assets/presets/`: `mandelbrot.json`, `landscape.json`, `coast.json`, `menger_sponge.json`
+- Примеры в `assets/presets/`: `mandelbrot2d.json`, `landscape.json`, `coast.json`, `menger_sponge.json`, `mandelbulb3d.json`, `julia3d.json`
 
-## Установка (Installers)
+## Технические детали
 
-### Windows (NSIS)
-Требуется NSIS 3.x: `winget install NSIS.NSIS` или скачайте с [nsis.sourceforge.io](https://nsis.sourceforge.io/Download).
+### Модульные шейдеры
+Фрагментный шейдер разбит на 6 модулей в `assets/shaders/inc/`, собираемых через кастомный препроцессор (`Shader::preprocessShader`), сохраняющий `#version` как первую директиву.
 
-```sh
-# Сборка и создание установщика
-cmake -G "MinGW Makefiles" -S . -B build-installer -DARS_FRACTA_BUILD_GUI=ON
-cmake --build build-installer --config Release --target ars_fracta
-cpack -G NSIS -C Release --config build-installer/CPackConfig.cmake
-# Результат: build-installer/ars_fracta-0.1.0-windows-x64.exe
-```
+### Uniform Buffer Object (std140)
+Все параметры фракталов передаются через один UBO (`FractalParamsUBO`, 96 байт, binding point 0) вместо 30+ отдельных `glUniform*` вызовов. Включает `uTime` для анимаций в math utilities.
 
-Или используйте скрипт:
-```sh
-.\build_installer.bat
-# или PowerShell
-.\build_installer.ps1
-```
-
-### Linux (DEB/RPM)
-```sh
-cmake -S . -B build-installer -DARS_FRACTA_BUILD_GUI=ON
-cmake --build build-installer --config Release --target ars_fracta
-cpack -G DEB -C Release --config build-installer/CPackConfig.cmake
-cpack -G RPM -C Release --config build-installer/CPackConfig.cmake
-```
-
-### macOS (DMG)
-```sh
-cmake -S . -B build-installer -DARS_FRACTA_BUILD_GUI=ON
-cmake --build build-installer --config Release --target ars_fracta
-cpack -G DragNDrop -C Release --config build-installer/CPackConfig.cmake
-```
+### Полноэкранный режим
+Приложение запускается в fullscreen на primary monitor (разрешение берётся из `glfwGetVideoMode`).
 
 ## Лицензия
 

@@ -30,6 +30,12 @@ public:
     void setVec2(const std::string& name, const glm::vec2& value) const;
     void setVec3(const std::string& name, const glm::vec3& value) const;
 
+    /// Bind a uniform block to a binding point (call after program is linked).
+    void bindUniformBlock(const std::string& blockName, GLuint bindingPoint) const;
+
+    /// Update a uniform buffer object with raw data (must be std140 layout).
+    void setUniformBuffer(GLuint buffer, const void* data, GLsizeiptr size) const;
+
 private:
     GLuint program_ = 0;
     mutable std::map<std::string, GLint> locations_;

@@ -57,7 +57,13 @@ bool Window::init() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, settings_.glMinor);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window_ = glfwCreateWindow(width_, height_, settings_.title.c_str(), nullptr, nullptr);
+    GLFWmonitor* monitor = settings_.fullscreen ? glfwGetPrimaryMonitor() : nullptr;
+    if (settings_.fullscreen && monitor) {
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        width_ = mode->width;
+        height_ = mode->height;
+    }
+    window_ = glfwCreateWindow(width_, height_, settings_.title.c_str(), monitor, nullptr);
     if (!window_) {
         std::cerr << "[Window] Cannot create GLFW window\n";
         return false;

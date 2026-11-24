@@ -1,11 +1,55 @@
 #include "render/Shader.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <unordered_set>
 
 namespace ars::render {
+
+namespace {
+
+std::string preprocessShader(const std::string& path, const std::string& baseDir,
+                             std::unordered_set<std::string>& included, bool isMainFile = true) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return "";
+    std::ostringstream ss;
+    std::string line;
+    bool versionWritten = false;
+    while (std::getline(in, line)) {
+        std::string trimmed = line;
+        size_t first = trimmed.find_first_not_of(" \t");
+        if (first != std::string::npos) trimmed = trimmed.substr(first);
+        // Preserve #version only in main file, skip in includes
+        if (trimmed.rfind("#version", 0) == 0) {
+            if (isMainFile && !versionWritten) {
+                ss << line << '\n';
+                versionWritten = true;
+            }
+            continue;
+        }
+        // Check for #include
+        if (trimmed.rfind("#include", 0) == 0) {
+            size_t quote1 = trimmed.find('"');
+            size_t quote2 = trimmed.find('"', quote1 + 1);
+            if (quote1 != std::string::npos && quote2 != std::string::npos && quote2 > quote1) {
+                std::string includePath = trimmed.substr(quote1 + 1, quote2 - quote1 - 1);
+                std::string fullPath = baseDir + "/" + includePath;
+                fullPath = std::filesystem::weakly_canonical(fullPath).string();
+                if (included.insert(fullPath).second) {
+                    ss << preprocessShader(fullPath, std::filesystem::path(fullPath).parent_path().string(), included, false);
+                }
+            }
+        } else {
+            ss << line << '\n';
+        }
+    }
+    return ss.str();
+}
+
+} // anonymous namespace
 
 Shader::~Shader() {
     if (program_) glDeleteProgram(program_);
@@ -62,7 +106,10 @@ bool Shader::loadFromFiles(const std::string& vertexPath, const std::string& fra
     }
 
     const std::string vs = readFile(vertexPath);
-    const std::string fs = readFile(fragmentPath);
+    // Preprocess fragment shader to resolve #include directives
+    std::unordered_set<std::string> included;
+    std::string baseDir = std::filesystem::path(fragmentPath).parent_path().string();
+    const std::string fs = preprocessShader(fragmentPath, baseDir, included);
     if (vs.empty() || fs.empty()) {
         std::cerr << "[Shader] Cannot read '" << vertexPath << "' or '" << fragmentPath << "'\n";
         return false;
@@ -126,6 +173,21 @@ void Shader::setVec2(const std::string& name, const glm::vec2& value) const {
 
 void Shader::setVec3(const std::string& name, const glm::vec3& value) const {
     glUniform3fv(location(name), 1, &value[0]);
+}
+
+void Shader::bindUniformBlock(const std::string& blockName, GLuint bindingPoint) const {
+    GLuint index = glGetUniformBlockIndex(program_, blockName.c_str());
+    if (index == GL_INVALID_INDEX) {
+        std::cerr << "[Shader] Warning: uniform block '" << blockName << "' not found\n";
+        return;
+    }
+    glUniformBlockBinding(program_, index, bindingPoint);
+}
+
+void Shader::setUniformBuffer(GLuint buffer, const void* data, GLsizeiptr size) const {
+    glBindBuffer(GL_UNIFORM_BUFFER, buffer);
+    glBufferData(GL_UNIFORM_BUFFER, size, data, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
 } // namespace ars::render

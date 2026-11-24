@@ -17,6 +17,7 @@ Renderer::~Renderer() {
     if (fbo_) glDeleteFramebuffers(1, &fbo_);
     if (colorTex_) glDeleteTextures(1, &colorTex_);
     if (depthRbo_) glDeleteRenderbuffers(1, &depthRbo_);
+    if (ubo_) glDeleteBuffers(1, &ubo_);
 }
 
 bool Renderer::init() {
@@ -26,6 +27,18 @@ bool Renderer::init() {
         std::cerr << "[Renderer] Cannot load shaders (assets dir: " << assets << ")\n";
         return false;
     }
+
+    // Create and bind UBO for fractal parameters
+    if (ubo_ == 0) {
+        glGenBuffers(1, &ubo_);
+        glBindBuffer(GL_UNIFORM_BUFFER, ubo_);
+        glBufferData(GL_UNIFORM_BUFFER, sizeof(FractalParamsUBO), nullptr, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    }
+
+    // Bind uniform block to binding point 0 (matches shader layout)
+    shader_.use();
+    shader_.bindUniformBlock("FractalParamsUBO", 0);
 
     if (quadVAO_ == 0) {
         // fullscreen triangle (покрывает весь экран без индексного буфера)
@@ -130,48 +143,33 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
     glClearColor(0.06f, 0.06f, 0.10f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    shader_.use();
+shader_.use();
     shader_.setVec2("uResolution", glm::vec2(static_cast<float>(width_),
                                              static_cast<float>(height_)));
-    shader_.setFloat("uTime", timeSec);
     shader_.setVec3("uCamPos", b.position);
     shader_.setVec3("uCamRight", b.right);
     shader_.setVec3("uCamUp", b.up);
     shader_.setVec3("uCamForward", b.forward);
     shader_.setFloat("uFov", b.fovDeg);
 
-    shader_.setInt("uFractalType", static_cast<int>(params.type));
-    // Детальность DE привязана к масштабу: на малом разрешении тонкие
-    // структуры всё равно не видны, поэтому гоняем меньше итераций
-    // (для 2D-фрактала это не применяем — там строгая формула).
+    // --- Prepare UBO data ---
     int iters = params.iterations;
-    // Террейн/побережье не использует марш DE — итерации не нужны шагам,
-    // но для побережья итерации задают точность границы Мандельброта.
     const core::fractal::FractalType ft = params.type;
     if (ft == core::fractal::FractalType::Terrain3D) {
         iters = params.iterations;
     } else if (ft == core::fractal::FractalType::MengerSponge) {
-        // Menger сходится быстро: >12 итераций уже не меняют картинку,
-        // но каждый лишний цикл тянет марш и нормали (до 5× DE на пиксель).
         iters = std::min(iters, 12);
     }
     if (ft != core::fractal::FractalType::Mandelbrot2D &&
         ft != core::fractal::FractalType::Terrain3D &&
         ft != core::fractal::FractalType::Coast3D) {
-        // Для ветвистых Mandelbulb/Julia режем итерации мягче, чем для
-        // Menger: слишком сильное сокращение «оголяет» тонкие структуры.
         const float factor = (ft == core::fractal::FractalType::MengerSponge)
-            ? 0.40f + 0.60f * renderScale_   // Menger: агрессивно
-            : 0.65f + 0.35f * renderScale_;  // Bulb/Julia: мягко
+            ? 0.40f + 0.60f * renderScale_
+            : 0.65f + 0.35f * renderScale_;
         iters = static_cast<int>(iters * factor);
         iters = std::max(3, iters);
     }
-    shader_.setInt("uIterations", iters);
-    // бюджет шагов ray marching / марша террейна зависит от типа и масштаба:
-    // Menger — толстые детали, хватает мало шагов; Mandelbulb/Julia — тонкие
-    // ветви, нужен запас шагов, иначе лучи проскакивают в щели; террейн —
-    // высотный марш, шаг по вертикальной дистанции, запас тоже важен.
-    // На низком масштабе деталей всё равно не видно, поэтому шаги режем.
+
     int maxSteps;
     switch (params.type) {
         case core::fractal::FractalType::MengerSponge:
@@ -182,9 +180,6 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
             maxSteps = static_cast<int>(140 + 160 * renderScale_);
             break;
         case core::fractal::FractalType::Terrain3D:
-            // террейн теперь марширует и по объектам (ели/валуны в составе
-            // поля) — в густом лесу лучи тратят больше шагов на сходимость,
-            // запас нужен, чтобы не прорезать «дыры» в кроне
             maxSteps = static_cast<int>(64 + 90 * renderScale_);
             break;
         case core::fractal::FractalType::Coast3D:
@@ -194,24 +189,31 @@ bool Renderer::renderFrame(const core::fractal::FractalParams& params, float tim
             maxSteps = static_cast<int>(100 + 100 * renderScale_);
             break;
     }
-    shader_.setInt("uMaxSteps", maxSteps);
-    shader_.setFloat("uBailout", params.bailout);
-    shader_.setFloat("uPower", params.power);
-    shader_.setVec3("uJuliaC", glm::vec3(params.juliaReal, params.juliaImag,
-                                        params.juliaImag3D));
-    shader_.setFloat("uDetail", params.detail);
-    shader_.setFloat("uColorScale", params.colorScale);
-    shader_.setFloat("uHueShift", params.hueShift);
-    shader_.setInt("uColorMode", params.colorMode);
-    shader_.setFloat("uM2dZoom", params.m2dZoom);
-    shader_.setFloat("uTerrainAmplitude", params.terrainAmplitude);
-    shader_.setFloat("uTerrainFrequency", params.terrainFrequency);
-    shader_.setFloat("uCloudDensity", params.cloudDensity);
-    shader_.setFloat("uTreeDensity", params.treeDensity);
-    shader_.setFloat("uTimeOfDay", params.timeOfDay);
-    shader_.setFloat("uFogDensity", params.fogDensity);
-    shader_.setVec2("uCoastCenter",
-                    glm::vec2(params.coastCenterRe, params.coastCenterIm));
+
+    FractalParamsUBO uboData{};
+    uboData.uFractalType      = static_cast<int>(params.type);
+    uboData.uIterations       = iters;
+    uboData.uBailout          = params.bailout;
+    uboData.uPower            = params.power;
+    uboData.uJuliaC           = glm::vec3(params.juliaReal, params.juliaImag, params.juliaImag3D);
+    uboData.uDetail           = params.detail;
+    uboData.uColorScale       = params.colorScale;
+    uboData.uHueShift         = params.hueShift;
+    uboData.uColorMode        = params.colorMode;
+    uboData.uM2dZoom          = params.m2dZoom;
+    uboData.uMaxSteps         = maxSteps;
+    uboData.uTime             = timeSec;
+    uboData.uTerrainAmplitude = params.terrainAmplitude;
+    uboData.uTerrainFrequency = params.terrainFrequency;
+    uboData.uCloudDensity     = params.cloudDensity;
+    uboData.uTreeDensity      = params.treeDensity;
+    uboData.uTimeOfDay        = params.timeOfDay;
+    uboData.uFogDensity       = params.fogDensity;
+    uboData.uCoastCenter      = glm::vec2(params.coastCenterRe, params.coastCenterIm);
+
+    // Upload UBO
+    shader_.setUniformBuffer(ubo_, &uboData, sizeof(FractalParamsUBO));
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_);
 
     glBindVertexArray(quadVAO_);
     glDrawArrays(GL_TRIANGLES, 0, 3);

@@ -29,7 +29,7 @@ using core::fractal::sanitizeParams;
 using utils::Config;
 
 static const char* kTypeNames[] = {
-    "Мандельброт 2D", "Мандельбульб 3D", "Губка Менгера", "Юлия 3D",
+    "Мандельброт 2D", "Мандельброт 3D", "Губка Менгера", "Множество Жюлиа",
     "Пейзаж", "Морское побережье"};
 static const char* kPalettes[] = {"Градиент", "Оттенки"};
 static const char* kTargetFps[] = {"20 FPS", "30 FPS", "45 FPS", "60 FPS", "90 FPS"};
